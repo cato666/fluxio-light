@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Activity, Calendar, Camera, CheckCircle, Clipboard, DollarSign, FileText, Home, LogOut, MessageCircle, Send, Settings, ShieldCheck, TrendingUp, Users, WalletCards } from 'lucide-react';
 import './styles/index.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = window.__FLUXIO_CONFIG__?.VITE_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 function api(path, options = {}) {
   const token = localStorage.getItem('token');
