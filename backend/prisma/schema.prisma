@@ -1,0 +1,458 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  SCHEDULED
+  WON
+  LOST
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum AttendanceStatus {
+  DRAFT
+  DONE
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+  PARTIAL
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  CARD
+  OTHER
+}
+
+enum EvidenceType {
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  OTHER
+}
+
+enum EvidenceCategory {
+  GENERAL
+  BEFORE
+  AFTER
+  PAYMENT_PROOF
+  PRESCRIPTION
+  DAMAGE
+  PART_INSTALLED
+  SPARE_PART
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum QuoteStatus {
+  DRAFT
+  PENDING_CONFIRMATION
+  SENT
+  ACCEPTED
+  REJECTED
+  CONVERTED
+  FAILED
+  CANCELLED
+}
+
+enum UserAccountStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+}
+
+enum ProfessionalInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+model User {
+  id             String       @id @default(uuid())
+  email          String       @unique
+  passwordHash   String
+  name           String
+  accountStatus  UserAccountStatus @default(PENDING_APPROVAL)
+  approvedAt     DateTime?
+  professional   Professional?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  acceptedInvitations ProfessionalInvitation[]
+}
+
+model ProfessionalInvitation {
+  id             String       @id @default(uuid())
+  email          String
+  displayName    String
+  profession     String?
+  phone          String?
+  note           String?
+  token          String       @unique
+  status         ProfessionalInvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  acceptedUserId String?
+  acceptedUser   User?        @relation(fields: [acceptedUserId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([email])
+  @@index([status, expiresAt])
+}
+
+model Professional {
+  id          String      @id @default(uuid())
+  userId      String      @unique
+  user        User        @relation(fields: [userId], references: [id])
+  displayName String
+  profession  String?
+  phone       String?
+  assistantAllowedPhones String?
+  email       String?
+  adminNotes  String?
+  timezone    String      @default("America/Santiago")
+  currency    String      @default("CLP")
+  kapsoCustomerId String? @unique
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  contacts    Contact[]
+  leads       Lead[]
+  quotes      Quote[]
+  appointments Appointment[]
+  attendances Attendance[]
+  incomeRecords IncomeRecord[]
+  expenses    Expense[]
+  campaigns   Campaign[]
+  whatsappConnections WhatsAppConnection[]
+  conversations WhatsAppConversation[]
+  messages    WhatsAppMessage[]
+  assistantPendingActions AssistantPendingAction[]
+  evidenceFiles EvidenceFile[]
+  auditLogs   AuditLog[]
+  messageTemplates MessageTemplate[]
+}
+
+model MessageTemplate {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  key            String
+  name           String
+  body           String
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([professionalId, key])
+  @@index([professionalId, active])
+}
+
+model Contact {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  fullName       String?
+  phone          String?
+  email          String?
+  commune        String?
+  address        String?
+  notes          String?
+  source         String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  leads          Lead[]
+  quotes         Quote[]
+  appointments   Appointment[]
+  attendances    Attendance[]
+  incomeRecords  IncomeRecord[]
+  expenses       Expense[]
+  evidenceFiles  EvidenceFile[]
+
+  @@index([professionalId, phone])
+}
+
+model Lead {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  contactId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+  title          String
+  description    String?
+  source         String       @default("whatsapp")
+  status         LeadStatus   @default(NEW)
+  estimatedValue Int?
+  nextActionAt   DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  evidenceFiles  EvidenceFile[]
+  expenses       Expense[]
+  quotes         Quote[]
+
+  @@index([professionalId, status])
+}
+
+model Quote {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  contactId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id])
+  attendance     Attendance?
+  title          String
+  description    String?
+  amount         Int          @default(0)
+  status         QuoteStatus  @default(DRAFT)
+  message        String?
+  sentAt         DateTime?
+  acceptedAt     DateTime?
+  rejectedAt     DateTime?
+  convertedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([professionalId, status])
+  @@index([professionalId, contactId])
+  @@index([professionalId, leadId])
+}
+
+model Appointment {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  contactId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+  title          String
+  description    String?
+  startsAt       DateTime
+  endsAt         DateTime?
+  status         AppointmentStatus @default(SCHEDULED)
+  location       String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  evidenceFiles  EvidenceFile[]
+}
+
+model Attendance {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  contactId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+  quoteId        String?      @unique
+  quote          Quote?       @relation(fields: [quoteId], references: [id])
+  title          String
+  description    String?
+  amount         Int          @default(0)
+  status         AttendanceStatus @default(DONE)
+  performedAt    DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  incomeRecord   IncomeRecord?
+  expenses       Expense[]
+  evidenceFiles  EvidenceFile[]
+}
+
+model IncomeRecord {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  contactId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+  attendanceId   String?      @unique
+  attendance     Attendance?  @relation(fields: [attendanceId], references: [id])
+  description    String
+  amount         Int
+  paymentStatus  PaymentStatus @default(PAID)
+  paymentMethod  PaymentMethod @default(OTHER)
+  paidAt         DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Expense {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  contactId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id])
+  attendanceId   String?
+  attendance     Attendance?  @relation(fields: [attendanceId], references: [id])
+  description    String
+  amount         Int
+  category       String?
+  spentAt        DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+
+  @@index([professionalId, attendanceId])
+  @@index([professionalId, contactId])
+  @@index([professionalId, leadId])
+}
+
+model Campaign {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  name           String
+  source         String
+  notes          String?
+  createdAt      DateTime     @default(now())
+}
+
+model WhatsAppConnection {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  kapsoCustomerId String?
+  setupLinkId    String?      @unique
+  setupLinkUrl   String?
+  setupLinkExpiresAt DateTime?
+  setupLinkStatus String?
+  lastError      String?
+  phoneNumberId  String?      @unique
+  displayPhone   String?
+  status         String       @default("PENDING")
+  connectionType String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  conversations  WhatsAppConversation[]
+}
+
+model WhatsAppConversation {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  connectionId   String?
+  connection     WhatsAppConnection? @relation(fields: [connectionId], references: [id])
+  contactPhone   String
+  contactName    String?
+  kapsoConversationId String?
+  lastMessageAt  DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  messages       WhatsAppMessage[]
+  evidenceFiles  EvidenceFile[]
+
+  @@index([professionalId, contactPhone])
+}
+
+model WhatsAppMessage {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  conversationId String?
+  conversation   WhatsAppConversation? @relation(fields: [conversationId], references: [id])
+  kapsoMessageId String?
+  direction      MessageDirection
+  outboundStatus String?
+  outboundSource String?
+  outboundError  String?
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  failedAt       DateTime?
+  fromPhone      String?
+  toPhone        String?
+  type           String
+  text           String?
+  payload        Json?
+  createdAt      DateTime     @default(now())
+
+  evidenceFiles  EvidenceFile[]
+
+  @@index([professionalId, direction, outboundStatus])
+  @@index([kapsoMessageId])
+}
+
+model AssistantPendingAction {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  fromPhone      String
+  type           String
+  payload        Json
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([professionalId, fromPhone])
+  @@index([expiresAt])
+}
+
+model EvidenceFile {
+  id             String       @id @default(uuid())
+  professionalId String
+  professional   Professional @relation(fields: [professionalId], references: [id])
+  contactId      String?
+  contact        Contact?     @relation(fields: [contactId], references: [id])
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id])
+  appointmentId  String?
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
+  attendanceId   String?
+  attendance     Attendance?  @relation(fields: [attendanceId], references: [id])
+  conversationId String?
+  conversation   WhatsAppConversation? @relation(fields: [conversationId], references: [id])
+  messageId      String?
+  message        WhatsAppMessage? @relation(fields: [messageId], references: [id])
+
+  type           EvidenceType
+  category       EvidenceCategory @default(GENERAL)
+  originalFileName String?
+  mimeType       String?
+  sizeBytes      Int?
+  storageProvider String
+  storageKey     String
+  publicUrl      String?
+  privateUrl     String?
+  caption        String?
+  source         String       @default("whatsapp")
+  createdAt      DateTime     @default(now())
+
+  @@index([professionalId, category])
+}
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  professionalId String?
+  professional   Professional? @relation(fields: [professionalId], references: [id])
+  action         String
+  entity         String?
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+}

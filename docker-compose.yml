@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fluxio-light-postgres
+    environment:
+      POSTGRES_USER: fluxio
+      POSTGRES_PASSWORD: fluxio
+      POSTGRES_DB: fluxio_light
+    ports:
+      - "5432:5432"
+    volumes:
+      - fluxio_light_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fluxio -d fluxio_light"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: fluxio-light-backend
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://fluxio:fluxio@postgres:5432/fluxio_light?schema=public
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/uploads:/app/uploads
+    command: sh -c "npx prisma migrate deploy && npm run start"
+
+  seed:
+    build:
+      context: ./backend
+    profiles:
+      - seed
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://fluxio:fluxio@postgres:5432/fluxio_light?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && npm run seed"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:3000/api
+    container_name: fluxio-light-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  fluxio_light_pgdata:

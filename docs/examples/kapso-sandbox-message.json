@@ -1,0 +1,32 @@
+{
+  "message": {
+    "id": "wamid.sandbox.message-001",
+    "timestamp": "1779900000",
+    "type": "text",
+    "from": "+56955555555",
+    "text": {
+      "body": "Hola, quiero una hora para curacion"
+    },
+    "kapso": {
+      "direction": "inbound",
+      "status": "received",
+      "processing_status": "pending",
+      "origin": "sandbox",
+      "has_media": false,
+      "content": "Hola, quiero una hora para curacion"
+    }
+  },
+  "conversation": {
+    "id": "conv_sandbox_001",
+    "phone_number": "+56955555555",
+    "status": "active",
+    "phone_number_id": "fluxio-light-sandbox-phone",
+    "kapso": {
+      "contact_name": "Cliente Sandbox",
+      "messages_count": 1,
+      "last_message_text": "Hola, quiero una hora para curacion"
+    }
+  },
+  "is_new_conversation": true,
+  "phone_number_id": "fluxio-light-sandbox-phone"
+}
