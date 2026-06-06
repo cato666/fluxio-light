@@ -329,7 +329,7 @@ function Card({ title, value, subtitle }) {
   );
 }
 
-function Dashboard({ setPage }) {
+function Dashboard({ setPage, onQuickAction }) {
   const [summary, setSummary] = useState(null);
 
   useEffect(() => {
@@ -349,7 +349,7 @@ function Dashboard({ setPage }) {
           <h1 className="text-3xl font-bold text-slate-900">Hoy</h1>
           <p className="mt-1 text-slate-500">Lo importante para avanzar tu jornada.</p>
         </div>
-        <button className="inline-flex w-fit items-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700" onClick={() => setPage('attendances')}>
+        <button className="inline-flex w-fit items-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700" onClick={() => onQuickAction('attendance')}>
           <Plus size={18} />
           Registrar atencion
         </button>
@@ -580,10 +580,85 @@ function ListPage({ title, endpoint, fields }) {
   );
 }
 
-function LeadsPage() {
+function AppointmentsPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [form, setForm] = useState({ contactId: '', title: '', startsAt: '', endsAt: '', location: '', description: '' });
+
+  async function load() {
+    const [appointmentRows, contactRows] = await Promise.all([api('/appointments'), api('/contacts')]);
+    setRows(appointmentRows);
+    setContacts(contactRows);
+  }
+
+  useEffect(() => { load().catch(console.error); }, []);
+  useEffect(() => { if (createRequest > 0) setCreating(true); }, [createRequest]);
+
+  async function createAppointment(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api('/appointments', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...form,
+          startsAt: new Date(form.startsAt).toISOString(),
+          endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : undefined
+        })
+      });
+      setForm({ contactId: '', title: '', startsAt: '', endsAt: '', location: '', description: '' });
+      setCreating(false);
+      await load();
+      setMessage('Servicio agendado.');
+    } catch (err) {
+      setMessage('No se pudo agendar el servicio.');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div><h1 className="text-3xl font-bold text-slate-900">Agenda</h1><p className="mt-1 text-slate-500">Servicios programados con fecha, cliente y lugar.</p></div>
+        <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Agendar servicio</button>
+      </div>
+      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      {creating && (
+        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createAppointment}>
+          <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Nuevo servicio agendado</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setCreating(false)}>Cancelar</button></div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium">Cliente<select className="mt-1 w-full rounded-lg border p-3" value={form.contactId} onChange={(e) => setForm({ ...form, contactId: e.target.value })}><option value="">Sin cliente asociado</option>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.fullName || contact.phone}</option>)}</select></label>
+            <label className="text-sm font-medium">Servicio<input className="mt-1 w-full rounded-lg border p-3" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></label>
+            <label className="text-sm font-medium">Inicio<input type="datetime-local" className="mt-1 w-full rounded-lg border p-3" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} required /></label>
+            <label className="text-sm font-medium">Termino<input type="datetime-local" className="mt-1 w-full rounded-lg border p-3" value={form.endsAt} onChange={(e) => setForm({ ...form, endsAt: e.target.value })} /></label>
+            <label className="text-sm font-medium">Lugar<input className="mt-1 w-full rounded-lg border p-3" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></label>
+            <label className="text-sm font-medium md:col-span-2">Detalle<textarea className="mt-1 min-h-24 w-full rounded-lg border p-3" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+          </div>
+          <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving}>{saving ? 'Agendando...' : 'Guardar en agenda'}</button>
+        </form>
+      )}
+      <div className="mt-6 overflow-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        <table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-4">Fecha</th><th className="p-4">Servicio</th><th className="p-4">Lugar</th><th className="p-4">Estado</th></tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.id} className="border-t"><td className="p-4">{formatDate(row.startsAt)}</td><td className="p-4 font-medium">{row.title}</td><td className="p-4">{row.location || '-'}</td><td className="p-4">{statusLabel(row.status)}</td></tr>)}{rows.length === 0 && <tr><td colSpan={4} className="p-6 text-slate-500">No tienes servicios agendados.</td></tr>}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LeadsPage({ createRequest = 0 }) {
+  const [rows, setRows] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
   const [editing, setEditing] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({ contactId: '', title: '', description: '', source: 'Manual', estimatedValue: '' });
   const [form, setForm] = useState({});
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
@@ -593,14 +668,42 @@ function LeadsPage() {
   const [creatingAttendance, setCreatingAttendance] = useState(false);
 
   async function load() {
-    const data = await api('/leads');
+    const [data, contactRows] = await Promise.all([api('/leads'), api('/contacts')]);
     setRows(data);
+    setContacts(contactRows);
   }
 
   useEffect(() => {
     load().catch(console.error);
   }, []);
+  useEffect(() => {
+    if (createRequest > 0) setCreating(true);
+  }, [createRequest]);
   const visibleRows = filterDemoRows(rows, demoFilter);
+
+  async function createLead(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api('/leads', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...createForm,
+          estimatedValue: createForm.estimatedValue === '' ? undefined : Number(createForm.estimatedValue)
+        })
+      });
+      setCreateForm({ contactId: '', title: '', description: '', source: 'Manual', estimatedValue: '' });
+      setCreating(false);
+      await load();
+      setMessage('Lead creado.');
+    } catch (err) {
+      setMessage('No se pudo crear el lead. Selecciona un cliente y revisa los datos.');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function startEdit(row) {
     setMessage('');
@@ -702,10 +805,45 @@ function LeadsPage() {
           <h1 className="text-3xl font-bold text-slate-900">Leads</h1>
           <p className="mt-1 text-slate-500">Edita datos de contacto y envia cotizaciones por WhatsApp.</p>
         </div>
-        <DemoFilter value={demoFilter} onChange={setDemoFilter} />
+        <div className="flex flex-wrap gap-2">
+          <DemoFilter value={demoFilter} onChange={setDemoFilter} />
+          <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700" onClick={() => setCreating(true)}>
+            Nuevo lead
+          </button>
+        </div>
       </div>
 
       {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+
+      {creating && (
+        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createLead}>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold text-slate-900">Nuevo lead</h2>
+            <button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setCreating(false)}>Cancelar</button>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium text-slate-700">Cliente
+              <select className="mt-1 w-full rounded-lg border p-3" value={createForm.contactId} onChange={(e) => setCreateForm({ ...createForm, contactId: e.target.value })} required>
+                <option value="">Seleccionar cliente</option>
+                {contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.fullName || contact.phone || 'Sin nombre'}</option>)}
+              </select>
+            </label>
+            <label className="text-sm font-medium text-slate-700">Servicio o necesidad
+              <input className="mt-1 w-full rounded-lg border p-3" value={createForm.title} onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })} required />
+            </label>
+            <label className="text-sm font-medium text-slate-700">Valor estimado
+              <input type="number" min="0" className="mt-1 w-full rounded-lg border p-3" value={createForm.estimatedValue} onChange={(e) => setCreateForm({ ...createForm, estimatedValue: e.target.value })} />
+            </label>
+            <label className="text-sm font-medium text-slate-700">Origen
+              <input className="mt-1 w-full rounded-lg border p-3" value={createForm.source} onChange={(e) => setCreateForm({ ...createForm, source: e.target.value })} />
+            </label>
+            <label className="text-sm font-medium text-slate-700 md:col-span-2">Detalle
+              <textarea className="mt-1 min-h-24 w-full rounded-lg border p-3" value={createForm.description} onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })} />
+            </label>
+          </div>
+          <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving}>{saving ? 'Guardando...' : 'Crear lead'}</button>
+        </form>
+      )}
 
       <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
         <table className="w-full text-left text-sm">
@@ -843,7 +981,7 @@ function LeadsPage() {
   );
 }
 
-function EditableRecordsPage({ title, endpoint, fields }) {
+function EditableRecordsPage({ title, endpoint, fields, refreshKey = 0 }) {
   const [rows, setRows] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
   const [editing, setEditing] = useState(null);
@@ -858,7 +996,7 @@ function EditableRecordsPage({ title, endpoint, fields }) {
 
   useEffect(() => {
     load().catch(console.error);
-  }, [endpoint]);
+  }, [endpoint, refreshKey]);
   const visibleRows = filterDemoRows(rows, demoFilter);
 
   function startEdit(row) {
@@ -976,10 +1114,72 @@ function EditableRecordsPage({ title, endpoint, fields }) {
   );
 }
 
-function AttendancesPage() {
+function ExpensesPage({ createRequest = 0 }) {
+  const fields = [
+    { key: 'description', label: 'Descripcion', editable: true },
+    { key: 'category', label: 'Categoria', editable: true },
+    { key: 'amount', label: 'Monto', type: 'number', editable: true, render: (row) => `$${Number(row.amount || 0).toLocaleString('es-CL')}` },
+    { key: 'spentAt', label: 'Fecha', render: (row) => formatDate(row.spentAt || row.createdAt) }
+  ];
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [form, setForm] = useState({ description: '', amount: '', category: 'Insumos' });
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => { if (createRequest > 0) setCreating(true); }, [createRequest]);
+
+  async function createExpense(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api('/expenses', { method: 'POST', body: JSON.stringify({ ...form, amount: Number(form.amount || 0) }) });
+      setForm({ description: '', amount: '', category: 'Insumos' });
+      setCreating(false);
+      setMessage('Gasto registrado.');
+      setRefreshKey((value) => value + 1);
+    } catch (err) {
+      setMessage('No se pudo registrar el gasto.');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Gastos</h1>
+          <p className="mt-1 text-slate-500">Registra y edita gastos operativos del profesional.</p>
+        </div>
+        <button className="w-fit rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Nuevo gasto</button>
+      </div>
+      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      {creating && (
+        <form className="mt-4 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createExpense}>
+          <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Registrar gasto</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setCreating(false)}>Cancelar</button></div>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <label className="text-sm font-medium">Descripcion<input className="mt-1 w-full rounded-lg border p-3" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required /></label>
+            <label className="text-sm font-medium">Monto<input type="number" min="0" className="mt-1 w-full rounded-lg border p-3" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required /></label>
+            <label className="text-sm font-medium">Categoria<input className="mt-1 w-full rounded-lg border p-3" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></label>
+          </div>
+          <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving}>{saving ? 'Guardando...' : 'Registrar gasto'}</button>
+        </form>
+      )}
+      <EditableRecordsPage title="Historial de gastos" endpoint="/expenses" fields={fields} refreshKey={refreshKey} />
+    </div>
+  );
+}
+
+function AttendancesPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({ contactId: '', title: '', description: '', amount: '', paymentStatus: 'PAID', paymentMethod: 'TRANSFER' });
   const [expenseForm, setExpenseForm] = useState({ description: '', amount: '', category: 'Insumos' });
   const [evidenceForm, setEvidenceForm] = useState({ file: null, category: 'GENERAL', caption: '' });
   const [message, setMessage] = useState('');
@@ -987,8 +1187,9 @@ function AttendancesPage() {
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
 
   async function load() {
-    const data = await api('/attendances');
+    const [data, contactRows] = await Promise.all([api('/attendances'), api('/contacts')]);
     setRows(data);
+    setContacts(contactRows);
   }
 
   async function openDetail(id) {
@@ -1002,7 +1203,29 @@ function AttendancesPage() {
   useEffect(() => {
     load().catch(console.error);
   }, []);
+  useEffect(() => { if (createRequest > 0) setCreating(true); }, [createRequest]);
   const visibleRows = filterDemoRows(rows, demoFilter);
+
+  async function createAttendanceDirect(e) {
+    e.preventDefault();
+    setMessage('');
+    setSavingExpense(true);
+    try {
+      await api('/attendances', {
+        method: 'POST',
+        body: JSON.stringify({ ...createForm, amount: Number(createForm.amount || 0), contactId: createForm.contactId || undefined })
+      });
+      setCreateForm({ contactId: '', title: '', description: '', amount: '', paymentStatus: 'PAID', paymentMethod: 'TRANSFER' });
+      setCreating(false);
+      await load();
+      setMessage('Atencion e ingreso registrados.');
+    } catch (err) {
+      setMessage('No se pudo registrar la atencion.');
+      console.error(err);
+    } finally {
+      setSavingExpense(false);
+    }
+  }
 
   async function addExpense(e) {
     e.preventDefault();
@@ -1066,10 +1289,28 @@ function AttendancesPage() {
           <h1 className="text-3xl font-bold text-slate-900">Atenciones</h1>
           <p className="mt-1 text-slate-500">Revisa clientes, ingresos, gastos asociados y utilidad estimada.</p>
         </div>
-        <DemoFilter value={demoFilter} onChange={setDemoFilter} />
+        <div className="flex flex-wrap gap-2">
+          <DemoFilter value={demoFilter} onChange={setDemoFilter} />
+          <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Registrar atencion</button>
+        </div>
       </div>
 
       {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+
+      {creating && (
+        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createAttendanceDirect}>
+          <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Registrar atencion</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setCreating(false)}>Cancelar</button></div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium">Cliente<select className="mt-1 w-full rounded-lg border p-3" value={createForm.contactId} onChange={(e) => setCreateForm({ ...createForm, contactId: e.target.value })}><option value="">Sin cliente asociado</option>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.fullName || contact.phone}</option>)}</select></label>
+            <label className="text-sm font-medium">Servicio<input className="mt-1 w-full rounded-lg border p-3" value={createForm.title} onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })} required /></label>
+            <label className="text-sm font-medium">Monto<input type="number" min="0" className="mt-1 w-full rounded-lg border p-3" value={createForm.amount} onChange={(e) => setCreateForm({ ...createForm, amount: e.target.value })} required /></label>
+            <label className="text-sm font-medium">Estado de pago<select className="mt-1 w-full rounded-lg border p-3" value={createForm.paymentStatus} onChange={(e) => setCreateForm({ ...createForm, paymentStatus: e.target.value })}>{['PAID', 'PENDING', 'PARTIAL'].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
+            <label className="text-sm font-medium">Metodo de pago<select className="mt-1 w-full rounded-lg border p-3" value={createForm.paymentMethod} onChange={(e) => setCreateForm({ ...createForm, paymentMethod: e.target.value })}>{['TRANSFER', 'CASH', 'CARD', 'OTHER'].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
+            <label className="text-sm font-medium md:col-span-2">Diagnostico o detalle<textarea className="mt-1 min-h-24 w-full rounded-lg border p-3" value={createForm.description} onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })} /></label>
+          </div>
+          <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={savingExpense}>{savingExpense ? 'Registrando...' : 'Registrar atencion e ingreso'}</button>
+        </form>
+      )}
 
       <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
         <table className="w-full text-left text-sm">
@@ -1641,23 +1882,51 @@ function EvidencePage() {
   );
 }
 
-function QuotesPage() {
+function QuotesPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
   const [message, setMessage] = useState('');
   const [workingId, setWorkingId] = useState(null);
   const [converting, setConverting] = useState(null);
   const [convertForm, setConvertForm] = useState({});
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({ contactId: '', title: '', description: '', amount: '' });
 
   async function load() {
-    const data = await api('/quotes');
+    const [data, contactRows] = await Promise.all([api('/quotes'), api('/contacts')]);
     setRows(data);
+    setContacts(contactRows);
   }
 
   useEffect(() => {
     load().catch(console.error);
   }, []);
+  useEffect(() => {
+    if (createRequest > 0) setCreating(true);
+  }, [createRequest]);
   const visibleRows = filterDemoRows(rows, demoFilter);
+
+  async function createQuote(e) {
+    e.preventDefault();
+    setWorkingId('create');
+    setMessage('');
+    try {
+      await api('/quotes', {
+        method: 'POST',
+        body: JSON.stringify({ ...createForm, amount: Number(createForm.amount || 0) })
+      });
+      setCreateForm({ contactId: '', title: '', description: '', amount: '' });
+      setCreating(false);
+      await load();
+      setMessage('Cotizacion creada como borrador.');
+    } catch (err) {
+      setMessage('No se pudo crear la cotizacion.');
+      console.error(err);
+    } finally {
+      setWorkingId(null);
+    }
+  }
 
   async function sendQuote(row) {
     setWorkingId(row.id);
@@ -1738,10 +2007,40 @@ function QuotesPage() {
           <h1 className="text-3xl font-bold text-slate-900">Cotizaciones</h1>
           <p className="mt-1 text-slate-500">Propuestas enviadas o preparadas desde WhatsApp Assistant y Leads.</p>
         </div>
-        <DemoFilter value={demoFilter} onChange={setDemoFilter} />
+        <div className="flex flex-wrap gap-2">
+          <DemoFilter value={demoFilter} onChange={setDemoFilter} />
+          <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Nueva cotizacion</button>
+        </div>
       </div>
 
       {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+
+      {creating && (
+        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createQuote}>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold text-slate-900">Nueva cotizacion</h2>
+            <button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setCreating(false)}>Cancelar</button>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium text-slate-700">Cliente
+              <select className="mt-1 w-full rounded-lg border p-3" value={createForm.contactId} onChange={(e) => setCreateForm({ ...createForm, contactId: e.target.value })} required>
+                <option value="">Seleccionar cliente</option>
+                {contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.fullName || contact.phone || 'Sin nombre'}</option>)}
+              </select>
+            </label>
+            <label className="text-sm font-medium text-slate-700">Servicio
+              <input className="mt-1 w-full rounded-lg border p-3" value={createForm.title} onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })} required />
+            </label>
+            <label className="text-sm font-medium text-slate-700">Monto
+              <input type="number" min="0" className="mt-1 w-full rounded-lg border p-3" value={createForm.amount} onChange={(e) => setCreateForm({ ...createForm, amount: e.target.value })} required />
+            </label>
+            <label className="text-sm font-medium text-slate-700 md:col-span-2">Detalle
+              <textarea className="mt-1 min-h-24 w-full rounded-lg border p-3" value={createForm.description} onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })} />
+            </label>
+          </div>
+          <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={workingId === 'create'}>{workingId === 'create' ? 'Creando...' : 'Crear cotizacion'}</button>
+        </form>
+      )}
 
       <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
         <table className="w-full text-left text-sm">
@@ -4131,6 +4430,8 @@ function QuickActionMenu({ onAction }) {
     { key: 'appointment', icon: Calendar, title: 'Agendar servicio', description: 'Abrir la agenda' },
     { key: 'attendance', icon: WalletCards, title: 'Registrar atencion', description: 'Crear desde un lead o cotizacion' },
     { key: 'quote', icon: FileText, title: 'Preparar cotizacion', description: 'Revisar oportunidades y cotizaciones' },
+    { key: 'lead', icon: TrendingUp, title: 'Nuevo lead', description: 'Registrar una oportunidad' },
+    { key: 'expense', icon: DollarSign, title: 'Registrar gasto', description: 'Ingresar un gasto operativo' },
     { key: 'whatsapp', icon: MessageCircle, title: 'Responder WhatsApp', description: 'Abrir conversaciones' }
   ];
 
@@ -4177,6 +4478,11 @@ function App() {
   });
   const [page, setPage] = useState('dashboard');
   const [createContactRequest, setCreateContactRequest] = useState(0);
+  const [createAppointmentRequest, setCreateAppointmentRequest] = useState(0);
+  const [createAttendanceRequest, setCreateAttendanceRequest] = useState(0);
+  const [createQuoteRequest, setCreateQuoteRequest] = useState(0);
+  const [createLeadRequest, setCreateLeadRequest] = useState(0);
+  const [createExpenseRequest, setCreateExpenseRequest] = useState(0);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) return;
@@ -4200,21 +4506,38 @@ function App() {
       setPage('contacts');
       return;
     }
-    if (action === 'appointment') setPage('appointments');
-    if (action === 'attendance') setPage('leads');
-    if (action === 'quote') setPage('quotes');
+    if (action === 'appointment') {
+      setCreateAppointmentRequest((value) => value + 1);
+      setPage('appointments');
+    }
+    if (action === 'attendance') {
+      setCreateAttendanceRequest((value) => value + 1);
+      setPage('attendances');
+    }
+    if (action === 'quote') {
+      setCreateQuoteRequest((value) => value + 1);
+      setPage('quotes');
+    }
+    if (action === 'lead') {
+      setCreateLeadRequest((value) => value + 1);
+      setPage('leads');
+    }
+    if (action === 'expense') {
+      setCreateExpenseRequest((value) => value + 1);
+      setPage('expenses');
+    }
     if (action === 'whatsapp') setPage('whatsapp');
   }
 
   const content = {
     onboarding: <OnboardingPage setPage={setPage} />,
-    dashboard: <Dashboard setPage={setPage} />,
+    dashboard: <Dashboard setPage={setPage} onQuickAction={handleQuickAction} />,
     demo: <DemoModePage setPage={setPage} />,
-    leads: <LeadsPage />,
-    quotes: <QuotesPage />,
+    leads: <LeadsPage createRequest={createLeadRequest} />,
+    quotes: <QuotesPage createRequest={createQuoteRequest} />,
     contacts: <ContactsPage createRequest={createContactRequest} />,
-    appointments: <ListPage title="Agenda" endpoint="/appointments" fields={[{key:'title',label:'Titulo'}, {key:'startsAt',label:'Fecha'}, {key:'location',label:'Lugar'}, {key:'status',label:'Estado'}]} />,
-    attendances: <AttendancesPage />,
+    appointments: <AppointmentsPage createRequest={createAppointmentRequest} />,
+    attendances: <AttendancesPage createRequest={createAttendanceRequest} />,
     income: <EditableRecordsPage title="Ingresos" endpoint="/income" fields={[
       {key:'description',label:'Descripcion', editable: true},
       {key:'attendance',label:'Atencion', render: (row) => row.attendance?.title || '-'},
@@ -4224,17 +4547,12 @@ function App() {
       {key:'paymentMethod',label:'Metodo', editable: true, options: ['CASH', 'TRANSFER', 'CARD', 'OTHER']},
       {key:'createdAt',label:'Fecha', render: (row) => formatDate(row.createdAt)}
     ]} />,
-    expenses: <EditableRecordsPage title="Gastos" endpoint="/expenses" fields={[
-      {key:'description',label:'Descripcion', editable: true},
-      {key:'category',label:'Categoria', editable: true},
-      {key:'amount',label:'Monto', type: 'number', editable: true, render: (row) => `$${Number(row.amount || 0).toLocaleString('es-CL')}`},
-      {key:'spentAt',label:'Fecha', render: (row) => formatDate(row.spentAt || row.createdAt)}
-    ]} />,
+    expenses: <ExpensesPage createRequest={createExpenseRequest} />,
     evidence: <EvidencePage />,
     whatsapp: <WhatsAppPage />,
     events: <EventsPage />,
     settings: <SettingsPage />,
-    admin: user?.isPlatformAdmin ? <PlatformAdminPage /> : <Dashboard setPage={setPage} />
+    admin: user?.isPlatformAdmin ? <PlatformAdminPage /> : <Dashboard setPage={setPage} onQuickAction={handleQuickAction} />
   }[page];
 
   return (
