@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, Calendar, Camera, CheckCircle, Clipboard, DollarSign, FileText, Home, LogOut, MessageCircle, Send, Settings, ShieldCheck, TrendingUp, Users, WalletCards } from 'lucide-react';
+import { Activity, Calendar, Camera, CheckCircle, Clipboard, DollarSign, FileText, Home, LogOut, MessageCircle, MoreHorizontal, Plus, Send, Settings, ShieldCheck, TrendingUp, Users, WalletCards, X } from 'lucide-react';
 import './styles/index.css';
 
 const API_URL = window.__FLUXIO_CONFIG__?.VITE_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -29,6 +29,41 @@ function formatDate(value) {
     hour: '2-digit',
     minute: '2-digit'
   });
+}
+
+const STATUS_LABELS = {
+  NEW: 'Nuevo',
+  CONTACTED: 'Contactado',
+  SCHEDULED: 'Agendado',
+  WON: 'Ganado',
+  LOST: 'Perdido',
+  COMPLETED: 'Completado',
+  CANCELLED: 'Cancelado',
+  NO_SHOW: 'No asistio',
+  DRAFT: 'Borrador',
+  DONE: 'Realizada',
+  PAID: 'Pagado',
+  PENDING: 'Pendiente',
+  PARTIAL: 'Pago parcial',
+  CASH: 'Efectivo',
+  TRANSFER: 'Transferencia',
+  CARD: 'Tarjeta',
+  OTHER: 'Otro',
+  PENDING_CONFIRMATION: 'Por confirmar',
+  SENT: 'Enviada',
+  ACCEPTED: 'Aceptada',
+  REJECTED: 'Rechazada',
+  CONVERTED: 'Convertida',
+  FAILED: 'Fallida',
+  ACTIVE: 'Activa',
+  SUSPENDED: 'Suspendida',
+  PENDING_APPROVAL: 'Pendiente de aprobacion',
+  INBOUND: 'Entrante',
+  OUTBOUND: 'Saliente'
+};
+
+function statusLabel(value) {
+  return STATUS_LABELS[value] || String(value || '-').replaceAll('_', ' ').toLowerCase().replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function isDemoRow(row) {
@@ -196,58 +231,90 @@ function Login({ onLogin }) {
 }
 
 function Sidebar({ page, setPage, user }) {
-  const items = [
+  const [showMore, setShowMore] = useState(false);
+  const primaryItems = [
     ['dashboard', Home, 'Dashboard'],
+    ['contacts', Users, 'Clientes'],
+    ['appointments', Calendar, 'Agenda'],
+    ['attendances', WalletCards, 'Atenciones'],
+    ['whatsapp', MessageCircle, 'WhatsApp']
+  ];
+  const secondaryItems = [
     ['onboarding', CheckCircle, 'Primeros pasos'],
     ['demo', Clipboard, 'Modo demo'],
     ['leads', TrendingUp, 'Leads'],
     ['quotes', FileText, 'Cotizaciones'],
-    ['contacts', Users, 'Clientes'],
-    ['appointments', Calendar, 'Agenda'],
-    ['attendances', WalletCards, 'Atenciones'],
     ['income', DollarSign, 'Ingresos'],
     ['expenses', WalletCards, 'Gastos'],
     ['evidence', Camera, 'Evidencias'],
-    ['whatsapp', MessageCircle, 'WhatsApp'],
     ['events', Activity, 'Eventos'],
     ['settings', Settings, 'Configuracion']
   ];
 
   if (user?.isPlatformAdmin) {
-    items.push(['admin', ShieldCheck, 'Admin plataforma']);
+    secondaryItems.push(['admin', ShieldCheck, 'Admin plataforma']);
+  }
+
+  function navigate(key) {
+    setPage(key);
+    setShowMore(false);
   }
 
   return (
-    <aside className="w-full border-b bg-white p-3 md:min-h-screen md:w-72 md:border-b-0 md:border-r">
-      <div className="mb-5 px-3">
-        <div className="text-xl font-bold text-slate-900">Fluxio Light</div>
-        <div className="text-sm text-slate-500">Profesionales independientes</div>
+    <aside className="w-full border-b bg-white p-3 md:sticky md:top-0 md:h-screen md:w-64 md:border-b-0 md:border-r">
+      <div className="flex items-center justify-between px-2 md:block">
+        <div>
+          <div className="text-xl font-bold text-slate-900">Fluxio Light</div>
+          <div className="text-sm text-slate-500">Tu operacion diaria</div>
+        </div>
+        <button className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden" onClick={() => setShowMore((value) => !value)} title={showMore ? 'Cerrar menu' : 'Ver mas opciones'}>
+          {showMore ? <X size={20} /> : <MoreHorizontal size={20} />}
+        </button>
       </div>
-      <nav className="grid grid-cols-2 gap-2 md:grid-cols-1">
-        {items.map(([key, Icon, label]) => (
+      <nav className="mt-4 grid grid-cols-3 gap-1 md:grid-cols-1 md:gap-1">
+        {primaryItems.map(([key, Icon, label]) => (
           <button
             key={key}
-            onClick={() => setPage(key)}
-            className={`flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium ${
+            onClick={() => navigate(key)}
+            className={`flex min-w-0 flex-col items-center gap-1 rounded-lg px-2 py-2 text-center text-xs font-medium md:flex-row md:gap-3 md:px-3 md:py-3 md:text-left md:text-sm ${
               page === key ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'
             }`}
           >
             <Icon size={18} />
-            {label}
+            <span className="truncate">{label}</span>
           </button>
         ))}
+        <button
+          onClick={() => setShowMore((value) => !value)}
+          className={`flex min-w-0 flex-col items-center gap-1 rounded-lg px-2 py-2 text-center text-xs font-medium md:flex-row md:gap-3 md:px-3 md:py-3 md:text-left md:text-sm ${
+            secondaryItems.some(([key]) => key === page) ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <MoreHorizontal size={18} />
+          <span>Mas</span>
+        </button>
       </nav>
-      <button
-        onClick={() => {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          window.location.reload();
-        }}
-        className="mt-5 flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium text-slate-600 hover:bg-slate-50"
-      >
-        <LogOut size={18} />
-        Cerrar sesion
-      </button>
+      {showMore && (
+        <div className="mt-3 grid grid-cols-2 gap-1 border-t border-slate-100 pt-3 md:grid-cols-1">
+          {secondaryItems.map(([key, Icon, label]) => (
+            <button key={key} onClick={() => navigate(key)} className={`flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium ${page === key ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-50'}`}>
+              <Icon size={18} />
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              localStorage.removeItem('token');
+              localStorage.removeItem('user');
+              window.location.reload();
+            }}
+            className="flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <LogOut size={18} />
+            Cerrar sesion
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
@@ -262,7 +329,7 @@ function Card({ title, value, subtitle }) {
   );
 }
 
-function Dashboard() {
+function Dashboard({ setPage }) {
   const [summary, setSummary] = useState(null);
 
   useEffect(() => {
@@ -271,75 +338,102 @@ function Dashboard() {
 
   if (!summary) return <div>Cargando...</div>;
 
+  const todayAppointments = summary.today?.appointments || [];
+  const conversationsToReply = summary.today?.conversationsToReply || [];
+  const pendingQuotes = summary.today?.pendingQuotes || [];
+
   return (
     <div>
-      <h1 className="text-3xl font-bold text-slate-900">Resumen del mes</h1>
-      <p className="mt-1 text-slate-500">Control rapido de ingresos, gastos y atenciones.</p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Hoy</h1>
+          <p className="mt-1 text-slate-500">Lo importante para avanzar tu jornada.</p>
+        </div>
+        <button className="inline-flex w-fit items-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-700" onClick={() => setPage('attendances')}>
+          <Plus size={18} />
+          Registrar atencion
+        </button>
+      </div>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card title="Ingresos" value={`$${summary.incomeTotal.toLocaleString('es-CL')}`} subtitle={`${summary.incomeCount} registros`} />
-        <Card title="Cobrados" value={`$${summary.paidIncomeTotal.toLocaleString('es-CL')}`} subtitle={`${summary.paidIncomeCount} pagos`} />
-        <Card title="Gastos" value={`$${summary.expensesTotal.toLocaleString('es-CL')}`} subtitle={`${summary.expensesCount} registros`} />
-        <Card title="Utilidad estimada" value={`$${summary.profitEstimate.toLocaleString('es-CL')}`} />
-        <Card title="Atenciones" value={summary.attendancesCount} />
-        <Card title="Pendiente de cobro" value={`$${summary.pendingPaymentTotal.toLocaleString('es-CL')}`} subtitle={`${summary.pendingPaymentCount} pendientes`} />
-        <Card title="Leads abiertos" value={summary.openLeadsCount} subtitle={`${summary.newLeadsCount} nuevos`} />
-        <Card title="Margen estimado" value={`${summary.profitMarginPercent}%`} />
-        <Card title="Cotizado" value={`$${Number(summary.quoteTotal || 0).toLocaleString('es-CL')}`} subtitle={`${summary.quoteCount || 0} cotizaciones`} />
-        <Card title="Aceptacion" value={`${summary.quoteAcceptanceRatePercent || 0}%`} subtitle={`${summary.acceptedQuotesCount || 0} aceptadas`} />
-        <Card title="Convertido" value={`$${Number(summary.convertedQuoteTotal || 0).toLocaleString('es-CL')}`} subtitle={`${summary.convertedQuotesCount || 0} atenciones`} />
-        <Card title="Rechazadas" value={summary.rejectedQuotesCount || 0} />
+        <button className="text-left" onClick={() => setPage('appointments')}><Card title="Atenciones de hoy" value={todayAppointments.length} subtitle={todayAppointments.length ? 'Ver agenda del dia' : 'Sin servicios agendados'} /></button>
+        <button className="text-left" onClick={() => setPage('whatsapp')}><Card title="Por responder" value={conversationsToReply.length} subtitle="Conversaciones con ultimo mensaje entrante" /></button>
+        <button className="text-left" onClick={() => setPage('quotes')}><Card title="Cotizaciones pendientes" value={pendingQuotes.length} subtitle="Borradores, por confirmar o enviadas" /></button>
+        <button className="text-left" onClick={() => setPage('income')}><Card title="Pendiente de cobro" value={`$${summary.pendingPaymentTotal.toLocaleString('es-CL')}`} subtitle={`${summary.pendingPaymentCount} pagos pendientes`} /></button>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-6 grid gap-4 xl:grid-cols-3">
         <div className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100">
-          <h2 className="text-xl font-semibold">Leads por estado</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-slate-900">Agenda de hoy</h2>
+            <button className="text-sm font-semibold text-emerald-700" onClick={() => setPage('appointments')}>Ver agenda</button>
+          </div>
           <div className="mt-4 grid gap-2 text-sm">
-            {(summary.leadsByStatus || []).map((item) => (
-              <div key={item.status} className="flex items-center justify-between rounded-lg bg-slate-50 p-3">
-                <span className="font-medium text-slate-700">{item.status}</span>
-                <span className="text-slate-500">{item.count}</span>
+            {todayAppointments.map((item) => (
+              <div key={item.id} className="rounded-lg bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold text-slate-800">{item.title}</span>
+                  <span className="text-xs font-semibold text-emerald-700">{new Date(item.startsAt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <div className="mt-1 text-slate-500">{item.contactName || item.contactPhone || 'Sin cliente'}{item.location ? ` - ${item.location}` : ''}</div>
               </div>
             ))}
-            {summary.leadsByStatus?.length === 0 && <div className="text-slate-500">Sin leads este mes.</div>}
+            {todayAppointments.length === 0 && <div className="rounded-lg bg-slate-50 p-4 text-slate-500">No tienes servicios agendados para hoy.</div>}
           </div>
         </div>
 
         <div className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100">
-          <h2 className="text-xl font-semibold">Cotizaciones por estado</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-slate-900">Mensajes por responder</h2>
+            <button className="text-sm font-semibold text-emerald-700" onClick={() => setPage('whatsapp')}>Ir a WhatsApp</button>
+          </div>
           <div className="mt-4 grid gap-2 text-sm">
-            {(summary.quotesByStatus || []).map((item) => (
-              <div key={item.status} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 p-3">
-                <span className="font-medium text-slate-700">{item.status}</span>
-                <span className="text-slate-500">{item.count} - ${Number(item.amount || 0).toLocaleString('es-CL')}</span>
-              </div>
+            {conversationsToReply.map((item) => (
+              <button key={item.id} className="rounded-lg bg-slate-50 p-3 text-left hover:bg-slate-100" onClick={() => setPage('whatsapp')}>
+                <div className="font-semibold text-slate-800">{item.contactName || item.contactPhone}</div>
+                <div className="mt-1 line-clamp-2 text-slate-500">{item.text || statusLabel(item.type)}</div>
+              </button>
             ))}
-            {summary.quotesByStatus?.length === 0 && <div className="text-slate-500">Sin cotizaciones este mes.</div>}
+            {conversationsToReply.length === 0 && (
+              <div className="rounded-lg bg-emerald-50 p-4 text-emerald-800">
+                No tienes conversaciones pendientes de respuesta.
+              </div>
+            )}
           </div>
         </div>
 
         <div className="rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100">
-          <h2 className="text-xl font-semibold">Atenciones recientes</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-slate-900">Cotizaciones pendientes</h2>
+            <button className="text-sm font-semibold text-emerald-700" onClick={() => setPage('quotes')}>Ver todas</button>
+          </div>
           <div className="mt-4 grid gap-2 text-sm">
-            {(summary.recentAttendances || []).map((row) => (
+            {pendingQuotes.map((row) => (
               <div key={row.id} className="rounded-lg bg-slate-50 p-3">
-                <div className="font-medium text-slate-800">{row.title}</div>
-                <div className="mt-1 text-slate-500">{row.contactName || row.contactPhone || 'Sin cliente'} - ${Number(row.amount || 0).toLocaleString('es-CL')}</div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-slate-800">{row.contactName || row.contactPhone || 'Sin cliente'}</div>
+                    <div className="mt-1 text-slate-500">{row.title}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold text-slate-800">${Number(row.amount || 0).toLocaleString('es-CL')}</div>
+                    <div className="text-xs text-slate-500">{statusLabel(row.status)}</div>
+                  </div>
+                </div>
               </div>
             ))}
-            {summary.recentAttendances?.length === 0 && <div className="text-slate-500">Sin atenciones recientes.</div>}
+            {pendingQuotes.length === 0 && <div className="rounded-lg bg-slate-50 p-4 text-slate-500">No tienes cotizaciones pendientes.</div>}
           </div>
         </div>
       </div>
 
-      <div className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100">
-        <h2 className="text-xl font-semibold">Comandos WhatsApp sugeridos</h2>
-        <div className="mt-3 grid gap-2 text-sm text-slate-600">
-          <code className="rounded-lg bg-slate-50 p-3">Registrar atencion: Ana Perez, curacion, $25000, transferencia</code>
-          <code className="rounded-lg bg-slate-50 p-3">Cotizaciones pendientes</code>
-          <code className="rounded-lg bg-slate-50 p-3">Crear atencion desde cotizacion de Ana Perez</code>
-          <code className="rounded-lg bg-slate-50 p-3">Nuevo lead: Carolina, cuidado adulto mayor, Instagram</code>
-          <code className="rounded-lg bg-slate-50 p-3">Cuanto llevo este mes?</code>
+      <div className="mt-6">
+        <h2 className="text-lg font-semibold text-slate-900">Resumen del mes</h2>
+        <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Card title="Ingresos" value={`$${summary.incomeTotal.toLocaleString('es-CL')}`} subtitle={`${summary.incomeCount} registros`} />
+          <Card title="Gastos" value={`$${summary.expensesTotal.toLocaleString('es-CL')}`} subtitle={`${summary.expensesCount} registros`} />
+          <Card title="Utilidad estimada" value={`$${summary.profitEstimate.toLocaleString('es-CL')}`} subtitle={`${summary.profitMarginPercent}% de margen`} />
+          <Card title="Atenciones" value={summary.attendancesCount} subtitle={`${summary.openLeadsCount} oportunidades abiertas`} />
         </div>
       </div>
     </div>
@@ -475,7 +569,7 @@ function ListPage({ title, endpoint, fields }) {
             {visibleRows.map(row => (
               <tr key={row.id} className="border-t">
                 <td className="p-4"><DemoBadge row={row} /></td>
-                {fields.map(f => <td key={f.key} className="p-4">{String(f.render ? f.render(row) : row[f.key] ?? '-')}</td>)}
+                {fields.map(f => <td key={f.key} className="p-4">{String(f.render ? f.render(row) : f.key === 'status' ? statusLabel(row[f.key]) : row[f.key] ?? '-')}</td>)}
               </tr>
             ))}
             {visibleRows.length === 0 && <tr><td className="p-6 text-slate-500" colSpan={fields.length + 1}>Sin registros.</td></tr>}
@@ -633,7 +727,7 @@ function LeadsPage() {
                 <td className="p-4"><DemoBadge row={row} /></td>
                 <td className="p-4">{row.contact?.fullName || '-'}</td>
                 <td className="p-4">{row.contact?.phone || '-'}</td>
-                <td className="p-4">{row.status}</td>
+                <td className="p-4">{statusLabel(row.status)}</td>
                 <td className="p-4">{row.estimatedValue ? `$${Number(row.estimatedValue).toLocaleString('es-CL')}` : '-'}</td>
                 <td className="p-4">
                   <div className="flex flex-wrap gap-2">
@@ -677,11 +771,7 @@ function LeadsPage() {
             <label className="block text-sm font-medium text-slate-700">
               Estado
               <select className="mt-1 w-full rounded-lg border p-3" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                <option value="NEW">NEW</option>
-                <option value="CONTACTED">CONTACTED</option>
-                <option value="SCHEDULED">SCHEDULED</option>
-                <option value="WON">WON</option>
-                <option value="LOST">LOST</option>
+                {['NEW', 'CONTACTED', 'SCHEDULED', 'WON', 'LOST'].map((option) => <option key={option} value={option}>{statusLabel(option)}</option>)}
               </select>
             </label>
             <label className="block text-sm font-medium text-slate-700">
@@ -728,18 +818,13 @@ function LeadsPage() {
             <label className="block text-sm font-medium text-slate-700">
               Estado de pago
               <select className="mt-1 w-full rounded-lg border p-3" value={attendanceForm.paymentStatus} onChange={(e) => setAttendanceForm({ ...attendanceForm, paymentStatus: e.target.value })}>
-                <option value="PENDING">PENDING</option>
-                <option value="PAID">PAID</option>
-                <option value="PARTIAL">PARTIAL</option>
+                {['PENDING', 'PAID', 'PARTIAL'].map((option) => <option key={option} value={option}>{statusLabel(option)}</option>)}
               </select>
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Metodo de pago
               <select className="mt-1 w-full rounded-lg border p-3" value={attendanceForm.paymentMethod} onChange={(e) => setAttendanceForm({ ...attendanceForm, paymentMethod: e.target.value })}>
-                <option value="OTHER">OTHER</option>
-                <option value="CASH">CASH</option>
-                <option value="TRANSFER">TRANSFER</option>
-                <option value="CARD">CARD</option>
+                {['OTHER', 'CASH', 'TRANSFER', 'CARD'].map((option) => <option key={option} value={option}>{statusLabel(option)}</option>)}
               </select>
             </label>
             <label className="block text-sm font-medium text-slate-700 md:col-span-2">
@@ -867,7 +952,7 @@ function EditableRecordsPage({ title, endpoint, fields }) {
                 {field.label}
                 {field.options ? (
                   <select className="mt-1 w-full rounded-lg border p-3" value={form[field.key]} onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}>
-                    {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                    {field.options.map((option) => <option key={option} value={option}>{statusLabel(option)}</option>)}
                   </select>
                 ) : (
                   <input
@@ -1137,7 +1222,7 @@ function AttendancesPage() {
   );
 }
 
-function ContactsPage() {
+function ContactsPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
   const [editing, setEditing] = useState(null);
@@ -1155,6 +1240,10 @@ function ContactsPage() {
   useEffect(() => {
     load().catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (createRequest > 0) startCreate();
+  }, [createRequest]);
   const visibleRows = filterDemoRows(rows, demoFilter);
 
   function emptyForm() {
@@ -4035,6 +4124,47 @@ function SettingsPage() {
   );
 }
 
+function QuickActionMenu({ onAction }) {
+  const [open, setOpen] = useState(false);
+  const actions = [
+    { key: 'contact', icon: Users, title: 'Nuevo cliente', description: 'Registrar datos de contacto' },
+    { key: 'appointment', icon: Calendar, title: 'Agendar servicio', description: 'Abrir la agenda' },
+    { key: 'attendance', icon: WalletCards, title: 'Registrar atencion', description: 'Crear desde un lead o cotizacion' },
+    { key: 'quote', icon: FileText, title: 'Preparar cotizacion', description: 'Revisar oportunidades y cotizaciones' },
+    { key: 'whatsapp', icon: MessageCircle, title: 'Responder WhatsApp', description: 'Abrir conversaciones' }
+  ];
+
+  function choose(key) {
+    onAction(key);
+    setOpen(false);
+  }
+
+  return (
+    <div className="fixed bottom-5 right-5 z-40">
+      {open && (
+        <div className="mb-3 w-[min(340px,calc(100vw-40px))] rounded-lg bg-white p-3 shadow-2xl ring-1 ring-slate-200">
+          <div className="px-2 pb-2 text-sm font-semibold text-slate-900">Nueva accion</div>
+          <div className="grid gap-1">
+            {actions.map(({ key, icon: Icon, title, description }) => (
+              <button key={key} className="flex items-center gap-3 rounded-lg p-3 text-left hover:bg-slate-50" onClick={() => choose(key)}>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700"><Icon size={18} /></span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-slate-900">{title}</span>
+                  <span className="block text-xs text-slate-500">{description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <button className="ml-auto flex h-14 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-semibold text-white shadow-lg hover:bg-emerald-700" onClick={() => setOpen((value) => !value)} title={open ? 'Cerrar acciones' : 'Nueva accion'}>
+        {open ? <X size={20} /> : <Plus size={20} />}
+        <span className="hidden sm:inline">{open ? 'Cerrar' : 'Nueva accion'}</span>
+      </button>
+    </div>
+  );
+}
+
 function App() {
   const [user, setUser] = useState(() => {
     const token = localStorage.getItem('token');
@@ -4045,7 +4175,8 @@ function App() {
       return { ok: true };
     }
   });
-  const [page, setPage] = useState('onboarding');
+  const [page, setPage] = useState('dashboard');
+  const [createContactRequest, setCreateContactRequest] = useState(0);
 
   useEffect(() => {
     if (!localStorage.getItem('token')) return;
@@ -4063,13 +4194,25 @@ function App() {
 
   if (!user) return <Login onLogin={setUser} />;
 
+  function handleQuickAction(action) {
+    if (action === 'contact') {
+      setCreateContactRequest((value) => value + 1);
+      setPage('contacts');
+      return;
+    }
+    if (action === 'appointment') setPage('appointments');
+    if (action === 'attendance') setPage('leads');
+    if (action === 'quote') setPage('quotes');
+    if (action === 'whatsapp') setPage('whatsapp');
+  }
+
   const content = {
     onboarding: <OnboardingPage setPage={setPage} />,
-    dashboard: <Dashboard />,
+    dashboard: <Dashboard setPage={setPage} />,
     demo: <DemoModePage setPage={setPage} />,
     leads: <LeadsPage />,
     quotes: <QuotesPage />,
-    contacts: <ContactsPage />,
+    contacts: <ContactsPage createRequest={createContactRequest} />,
     appointments: <ListPage title="Agenda" endpoint="/appointments" fields={[{key:'title',label:'Titulo'}, {key:'startsAt',label:'Fecha'}, {key:'location',label:'Lugar'}, {key:'status',label:'Estado'}]} />,
     attendances: <AttendancesPage />,
     income: <EditableRecordsPage title="Ingresos" endpoint="/income" fields={[
@@ -4091,13 +4234,14 @@ function App() {
     whatsapp: <WhatsAppPage />,
     events: <EventsPage />,
     settings: <SettingsPage />,
-    admin: user?.isPlatformAdmin ? <PlatformAdminPage /> : <Dashboard />
+    admin: user?.isPlatformAdmin ? <PlatformAdminPage /> : <Dashboard setPage={setPage} />
   }[page];
 
   return (
     <div className="min-h-screen md:flex">
       <Sidebar page={page} setPage={setPage} user={user} />
-      <main className="flex-1 p-6 md:p-10">{content}</main>
+      <main className="min-w-0 flex-1 p-4 pb-24 md:p-8 md:pb-24 xl:p-10">{content}</main>
+      <QuickActionMenu onAction={handleQuickAction} />
     </div>
   );
 }

@@ -10,6 +10,16 @@ Fluxio Light es un MVP separado de Fluxio principal para profesionales independi
 - Storage: local en MVP, preparado para S3/MinIO
 - Deploy: Docker / EasyPanel
 
+## Experiencia de uso
+
+La interfaz del profesional prioriza la operacion diaria:
+
+- navegacion principal reducida a Dashboard, Clientes, Agenda, Atenciones y WhatsApp;
+- modulos secundarios agrupados bajo `Mas`;
+- dashboard `Hoy` con agenda, conversaciones por responder, cotizaciones pendientes y cobros pendientes;
+- menu global `Nueva accion` para acceder rapidamente a clientes, agenda, atenciones, cotizaciones y WhatsApp;
+- estados de negocio mostrados con etiquetas legibles en español, manteniendo los enums internos en backend.
+
 ## Estructura
 
 ```txt
