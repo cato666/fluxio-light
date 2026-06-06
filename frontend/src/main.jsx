@@ -31,6 +31,13 @@ function formatDate(value) {
   });
 }
 
+function toDateTimeLocal(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
+}
+
 const STATUS_LABELS = {
   NEW: 'Nuevo',
   CONTACTED: 'Contactado',
@@ -584,9 +591,12 @@ function AppointmentsPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [completing, setCompleting] = useState(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [form, setForm] = useState({ contactId: '', title: '', startsAt: '', endsAt: '', location: '', description: '' });
+  const [completionForm, setCompletionForm] = useState({ amount: '', paymentStatus: 'PENDING', paymentMethod: 'OTHER' });
 
   async function load() {
     const [appointmentRows, contactRows] = await Promise.all([api('/appointments'), api('/contacts')]);
@@ -622,6 +632,110 @@ function AppointmentsPage({ createRequest = 0 }) {
     }
   }
 
+  function startEdit(row) {
+    setEditing(row);
+    setCreating(false);
+    setForm({
+      contactId: row.contactId || '',
+      title: row.title || '',
+      startsAt: toDateTimeLocal(row.startsAt),
+      endsAt: toDateTimeLocal(row.endsAt),
+      location: row.location || '',
+      description: row.description || '',
+      status: row.status || 'SCHEDULED'
+    });
+  }
+
+  async function saveAppointment(e) {
+    e.preventDefault();
+    if (!editing) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await api(`/appointments/${editing.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...form,
+          contactId: form.contactId || undefined,
+          startsAt: new Date(form.startsAt).toISOString(),
+          endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : undefined
+        })
+      });
+      setEditing(null);
+      setForm({ contactId: '', title: '', startsAt: '', endsAt: '', location: '', description: '' });
+      await load();
+      setMessage('Servicio actualizado.');
+    } catch (err) {
+      setMessage('No se pudo actualizar el servicio.');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changeStatus(row, status) {
+    if ((status === 'CANCELLED' || status === 'NO_SHOW') && !window.confirm(`¿Confirmas marcar este servicio como ${statusLabel(status).toLowerCase()}?`)) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await api(`/appointments/${row.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await load();
+      setMessage(`Servicio marcado como ${statusLabel(status).toLowerCase()}.`);
+    } catch (err) {
+      setMessage('No se pudo cambiar el estado del servicio.');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startCompletion(row) {
+    setCompleting(row);
+    setCompletionForm({ amount: '', paymentStatus: 'PENDING', paymentMethod: 'OTHER' });
+  }
+
+  async function completeAppointment(e) {
+    e.preventDefault();
+    if (!completing) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await api(`/appointments/${completing.id}/create-attendance`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: completing.title,
+          description: completing.description,
+          amount: Number(completionForm.amount || 0),
+          paymentStatus: completionForm.paymentStatus,
+          paymentMethod: completionForm.paymentMethod
+        })
+      });
+      setCompleting(null);
+      await load();
+      setMessage('Servicio completado. Se crearon la atencion y el ingreso.');
+    } catch (err) {
+      setMessage('No se pudo completar el servicio.');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteAppointment(row) {
+    if (!window.confirm('¿Eliminar definitivamente este servicio agendado?')) return;
+    setSaving(true);
+    try {
+      await api(`/appointments/${row.id}`, { method: 'DELETE' });
+      await load();
+      setMessage('Servicio eliminado.');
+    } catch (err) {
+      setMessage('No se puede eliminar porque tiene atencion o evidencias. Puedes cancelarlo.');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -629,25 +743,37 @@ function AppointmentsPage({ createRequest = 0 }) {
         <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Agendar servicio</button>
       </div>
       {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
-      {creating && (
-        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createAppointment}>
-          <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Nuevo servicio agendado</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setCreating(false)}>Cancelar</button></div>
+      {(creating || editing) && (
+        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={editing ? saveAppointment : createAppointment}>
+          <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">{editing ? 'Editar servicio agendado' : 'Nuevo servicio agendado'}</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => { setCreating(false); setEditing(null); }}>Cancelar</button></div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <label className="text-sm font-medium">Cliente<select className="mt-1 w-full rounded-lg border p-3" value={form.contactId} onChange={(e) => setForm({ ...form, contactId: e.target.value })}><option value="">Sin cliente asociado</option>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.fullName || contact.phone}</option>)}</select></label>
             <label className="text-sm font-medium">Servicio<input className="mt-1 w-full rounded-lg border p-3" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required /></label>
             <label className="text-sm font-medium">Inicio<input type="datetime-local" className="mt-1 w-full rounded-lg border p-3" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} required /></label>
             <label className="text-sm font-medium">Termino<input type="datetime-local" className="mt-1 w-full rounded-lg border p-3" value={form.endsAt} onChange={(e) => setForm({ ...form, endsAt: e.target.value })} /></label>
             <label className="text-sm font-medium">Lugar<input className="mt-1 w-full rounded-lg border p-3" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></label>
+            {editing && <label className="text-sm font-medium">Estado<select className="mt-1 w-full rounded-lg border p-3" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} disabled={Boolean(editing.attendance)}>{[...(editing.status === 'COMPLETED' ? ['COMPLETED'] : []), 'SCHEDULED', 'CANCELLED', 'NO_SHOW'].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>}
             <label className="text-sm font-medium md:col-span-2">Detalle<textarea className="mt-1 min-h-24 w-full rounded-lg border p-3" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
           </div>
-          <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving}>{saving ? 'Agendando...' : 'Guardar en agenda'}</button>
+          <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving}>{saving ? 'Guardando...' : editing ? 'Guardar cambios' : 'Guardar en agenda'}</button>
         </form>
       )}
       <div className="mt-6 overflow-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
-        <table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-4">Fecha</th><th className="p-4">Servicio</th><th className="p-4">Lugar</th><th className="p-4">Estado</th></tr></thead>
-          <tbody>{rows.map((row) => <tr key={row.id} className="border-t"><td className="p-4">{formatDate(row.startsAt)}</td><td className="p-4 font-medium">{row.title}</td><td className="p-4">{row.location || '-'}</td><td className="p-4">{statusLabel(row.status)}</td></tr>)}{rows.length === 0 && <tr><td colSpan={4} className="p-6 text-slate-500">No tienes servicios agendados.</td></tr>}</tbody>
+        <table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-4">Fecha</th><th className="p-4">Cliente</th><th className="p-4">Servicio</th><th className="p-4">Lugar</th><th className="p-4">Estado</th><th className="p-4">Acciones</th></tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.id} className="border-t"><td className="p-4">{formatDate(row.startsAt)}</td><td className="p-4">{row.contact?.fullName || row.contact?.phone || '-'}</td><td className="p-4 font-medium">{row.title}</td><td className="p-4">{row.location || '-'}</td><td className="p-4">{statusLabel(row.status)}</td><td className="p-4"><div className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => startEdit(row)}>Editar</button>{row.status === 'SCHEDULED' && !row.attendance && <button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white" onClick={() => startCompletion(row)}>Completar</button>}{row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => changeStatus(row, 'CANCELLED')}>Cancelar</button>}{row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => changeStatus(row, 'NO_SHOW')}>No asistio</button>}{!row.attendance && <button className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700" onClick={() => deleteAppointment(row)}>Eliminar</button>}</div></td></tr>)}{rows.length === 0 && <tr><td colSpan={6} className="p-6 text-slate-500">No tienes servicios agendados.</td></tr>}</tbody>
         </table>
       </div>
+      {completing && (
+        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={completeAppointment}>
+          <div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold">Completar servicio</h2><p className="text-sm text-slate-500">{completing.title}</p></div><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setCompleting(null)}>Cancelar</button></div>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <label className="text-sm font-medium">Monto<input type="number" min="0" required className="mt-1 w-full rounded-lg border p-3" value={completionForm.amount} onChange={(e) => setCompletionForm({ ...completionForm, amount: e.target.value })} /></label>
+            <label className="text-sm font-medium">Estado de pago<select className="mt-1 w-full rounded-lg border p-3" value={completionForm.paymentStatus} onChange={(e) => setCompletionForm({ ...completionForm, paymentStatus: e.target.value })}>{['PENDING', 'PAID', 'PARTIAL'].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
+            <label className="text-sm font-medium">Metodo<select className="mt-1 w-full rounded-lg border p-3" value={completionForm.paymentMethod} onChange={(e) => setCompletionForm({ ...completionForm, paymentMethod: e.target.value })}>{['OTHER', 'TRANSFER', 'CASH', 'CARD'].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
+          </div>
+          <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving}>{saving ? 'Completando...' : 'Crear atencion e ingreso'}</button>
+        </form>
+      )}
     </div>
   );
 }
@@ -666,6 +792,8 @@ function LeadsPage({ createRequest = 0 }) {
   const [attendanceLead, setAttendanceLead] = useState(null);
   const [attendanceForm, setAttendanceForm] = useState({});
   const [creatingAttendance, setCreatingAttendance] = useState(false);
+  const [closingLead, setClosingLead] = useState(null);
+  const [closeForm, setCloseForm] = useState({ status: 'LOST', reason: '' });
 
   async function load() {
     const [data, contactRows] = await Promise.all([api('/leads'), api('/contacts')]);
@@ -798,6 +926,32 @@ function LeadsPage({ createRequest = 0 }) {
     }
   }
 
+  function startClose(row) {
+    setClosingLead(row);
+    setCloseForm({ status: row.status === 'WON' ? 'WON' : 'LOST', reason: row.closedReason || '' });
+  }
+
+  async function closeLead(e) {
+    e.preventDefault();
+    if (!closingLead) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await api(`/leads/${closingLead.id}/close`, {
+        method: 'PATCH',
+        body: JSON.stringify(closeForm)
+      });
+      setClosingLead(null);
+      await load();
+      setMessage(`Lead cerrado como ${statusLabel(closeForm.status).toLowerCase()}.`);
+    } catch (err) {
+      setMessage('No se pudo cerrar el lead.');
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -865,7 +1019,7 @@ function LeadsPage({ createRequest = 0 }) {
                 <td className="p-4"><DemoBadge row={row} /></td>
                 <td className="p-4">{row.contact?.fullName || '-'}</td>
                 <td className="p-4">{row.contact?.phone || '-'}</td>
-                <td className="p-4">{statusLabel(row.status)}</td>
+                <td className="p-4"><div>{statusLabel(row.status)}</div>{row.closedReason && <div className="mt-1 max-w-48 text-xs text-slate-500">{row.closedReason}</div>}</td>
                 <td className="p-4">{row.estimatedValue ? `$${Number(row.estimatedValue).toLocaleString('es-CL')}` : '-'}</td>
                 <td className="p-4">
                   <div className="flex flex-wrap gap-2">
@@ -886,6 +1040,11 @@ function LeadsPage({ createRequest = 0 }) {
                     >
                       Crear atencion
                     </button>
+                    {!['WON', 'LOST'].includes(row.status) && (
+                      <button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => startClose(row)}>
+                        Cerrar lead
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -908,8 +1067,8 @@ function LeadsPage({ createRequest = 0 }) {
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Estado
-              <select className="mt-1 w-full rounded-lg border p-3" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                {['NEW', 'CONTACTED', 'SCHEDULED', 'WON', 'LOST'].map((option) => <option key={option} value={option}>{statusLabel(option)}</option>)}
+              <select className="mt-1 w-full rounded-lg border p-3" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} disabled={['WON', 'LOST'].includes(editing.status)}>
+                {[...(['WON', 'LOST'].includes(editing.status) ? [editing.status] : []), 'NEW', 'CONTACTED', 'SCHEDULED'].map((option) => <option key={option} value={option}>{statusLabel(option)}</option>)}
               </select>
             </label>
             <label className="block text-sm font-medium text-slate-700">
@@ -976,6 +1135,20 @@ function LeadsPage({ createRequest = 0 }) {
             </div>
           </form>
         </div>
+      )}
+
+      {closingLead && (
+        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={closeLead}>
+          <div className="flex items-center justify-between gap-4">
+            <div><h2 className="text-lg font-semibold text-slate-900">Cerrar lead</h2><p className="text-sm text-slate-500">{closingLead.title}</p></div>
+            <button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setClosingLead(null)}>Cancelar</button>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium">Resultado<select className="mt-1 w-full rounded-lg border p-3" value={closeForm.status} onChange={(e) => setCloseForm({ ...closeForm, status: e.target.value })}><option value="WON">Ganado</option><option value="LOST">Perdido</option></select></label>
+            <label className="text-sm font-medium md:col-span-2">Motivo del cierre<textarea required className="mt-1 min-h-24 w-full rounded-lg border p-3" value={closeForm.reason} onChange={(e) => setCloseForm({ ...closeForm, reason: e.target.value })} placeholder="Ejemplo: cliente confirmo, eligio otra alternativa o no respondio." /></label>
+          </div>
+          <button className="mt-4 rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving || !closeForm.reason.trim()}>{saving ? 'Cerrando...' : 'Confirmar cierre'}</button>
+        </form>
       )}
     </div>
   );
@@ -1185,6 +1358,8 @@ function AttendancesPage({ createRequest = 0 }) {
   const [message, setMessage] = useState('');
   const [savingExpense, setSavingExpense] = useState(false);
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
+  const [editingAttendance, setEditingAttendance] = useState(false);
+  const [attendanceEditForm, setAttendanceEditForm] = useState({});
 
   async function load() {
     const [data, contactRows] = await Promise.all([api('/attendances'), api('/contacts')]);
@@ -1221,6 +1396,78 @@ function AttendancesPage({ createRequest = 0 }) {
       setMessage('Atencion e ingreso registrados.');
     } catch (err) {
       setMessage('No se pudo registrar la atencion.');
+      console.error(err);
+    } finally {
+      setSavingExpense(false);
+    }
+  }
+
+  function startAttendanceEdit() {
+    if (!selected) return;
+    setAttendanceEditForm({
+      contactId: selected.contactId || '',
+      title: selected.title || '',
+      description: selected.description || '',
+      amount: selected.incomeRecord?.amount ?? selected.amount ?? 0,
+      status: selected.status || 'DONE',
+      paymentStatus: selected.incomeRecord?.paymentStatus || 'PENDING',
+      paymentMethod: selected.incomeRecord?.paymentMethod || 'OTHER'
+    });
+    setEditingAttendance(true);
+  }
+
+  async function saveAttendance(e) {
+    e.preventDefault();
+    if (!selected) return;
+    setSavingExpense(true);
+    setMessage('');
+    try {
+      await api(`/attendances/${selected.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...attendanceEditForm,
+          contactId: attendanceEditForm.contactId || undefined,
+          amount: Number(attendanceEditForm.amount || 0)
+        })
+      });
+      setEditingAttendance(false);
+      await load();
+      await openDetail(selected.id);
+      setMessage('Atencion e ingreso actualizados.');
+    } catch (err) {
+      setMessage('No se pudo actualizar la atencion.');
+      console.error(err);
+    } finally {
+      setSavingExpense(false);
+    }
+  }
+
+  async function cancelAttendance() {
+    if (!selected || !window.confirm('¿Confirmas cancelar esta atencion?')) return;
+    setSavingExpense(true);
+    try {
+      await api(`/attendances/${selected.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'CANCELLED' }) });
+      await load();
+      await openDetail(selected.id);
+      setMessage('Atencion cancelada.');
+    } catch (err) {
+      setMessage('No se pudo cancelar la atencion.');
+      console.error(err);
+    } finally {
+      setSavingExpense(false);
+    }
+  }
+
+  async function deleteAttendance() {
+    if (!selected || !window.confirm('¿Eliminar definitivamente esta atencion y su ingreso?')) return;
+    setSavingExpense(true);
+    try {
+      await api(`/attendances/${selected.id}`, { method: 'DELETE' });
+      setSelected(null);
+      await load();
+      setMessage('Atencion eliminada.');
+    } catch (err) {
+      setMessage('No se puede eliminar una atencion con gastos o evidencias. Puedes cancelarla.');
       console.error(err);
     } finally {
       setSavingExpense(false);
@@ -1359,7 +1606,12 @@ function AttendancesPage({ createRequest = 0 }) {
                 <h2 className="text-xl font-semibold text-slate-900">{selected.title}</h2>
                 <div className="mt-1 text-sm text-slate-500">{selected.contact?.fullName || 'Sin cliente'} - {selected.contact?.phone || 'Sin telefono'}</div>
               </div>
-              <button className="text-sm font-semibold text-slate-500 hover:text-slate-700" onClick={() => setSelected(null)}>Cerrar</button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={startAttendanceEdit}>Editar</button>
+                {selected.status !== 'CANCELLED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={cancelAttendance}>Cancelar atencion</button>}
+                {selected.expenses?.length === 0 && selected.evidenceFiles?.length === 0 && <button className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700" onClick={deleteAttendance}>Eliminar</button>}
+                <button className="px-3 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700" onClick={() => setSelected(null)}>Cerrar</button>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-3 md:grid-cols-3">
@@ -1367,6 +1619,19 @@ function AttendancesPage({ createRequest = 0 }) {
               <Card title="Gastos" value={`$${Number(selected.expensesTotal || 0).toLocaleString('es-CL')}`} subtitle={`${selected.expenses?.length || 0} registros`} />
               <Card title="Utilidad" value={`$${Number(selected.profitEstimate || 0).toLocaleString('es-CL')}`} />
             </div>
+
+            {editingAttendance && (
+              <form className="mt-5 grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-2" onSubmit={saveAttendance}>
+                <label className="text-sm font-medium">Cliente<select className="mt-1 w-full rounded-lg border bg-white p-3" value={attendanceEditForm.contactId} onChange={(e) => setAttendanceEditForm({ ...attendanceEditForm, contactId: e.target.value })}><option value="">Sin cliente</option>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.fullName || contact.phone}</option>)}</select></label>
+                <label className="text-sm font-medium">Servicio<input className="mt-1 w-full rounded-lg border bg-white p-3" value={attendanceEditForm.title} onChange={(e) => setAttendanceEditForm({ ...attendanceEditForm, title: e.target.value })} required /></label>
+                <label className="text-sm font-medium">Monto<input type="number" min="0" className="mt-1 w-full rounded-lg border bg-white p-3" value={attendanceEditForm.amount} onChange={(e) => setAttendanceEditForm({ ...attendanceEditForm, amount: e.target.value })} required /></label>
+                <label className="text-sm font-medium">Estado<select className="mt-1 w-full rounded-lg border bg-white p-3" value={attendanceEditForm.status} onChange={(e) => setAttendanceEditForm({ ...attendanceEditForm, status: e.target.value })}>{['DRAFT', 'DONE', 'CANCELLED'].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
+                <label className="text-sm font-medium">Estado de pago<select className="mt-1 w-full rounded-lg border bg-white p-3" value={attendanceEditForm.paymentStatus} onChange={(e) => setAttendanceEditForm({ ...attendanceEditForm, paymentStatus: e.target.value })}>{['PENDING', 'PAID', 'PARTIAL'].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
+                <label className="text-sm font-medium">Metodo de pago<select className="mt-1 w-full rounded-lg border bg-white p-3" value={attendanceEditForm.paymentMethod} onChange={(e) => setAttendanceEditForm({ ...attendanceEditForm, paymentMethod: e.target.value })}>{['OTHER', 'TRANSFER', 'CASH', 'CARD'].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
+                <label className="text-sm font-medium md:col-span-2">Descripcion<textarea className="mt-1 min-h-24 w-full rounded-lg border bg-white p-3" value={attendanceEditForm.description} onChange={(e) => setAttendanceEditForm({ ...attendanceEditForm, description: e.target.value })} /></label>
+                <div className="flex gap-2 md:col-span-2"><button className="rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={savingExpense}>{savingExpense ? 'Guardando...' : 'Guardar cambios'}</button><button type="button" className="rounded-lg border px-4 py-3 text-sm font-semibold" onClick={() => setEditingAttendance(false)}>Cancelar</button></div>
+              </form>
+            )}
 
             <div className="mt-5 rounded-lg bg-slate-50 p-4">
               <div className="text-sm font-semibold text-slate-900">Descripcion</div>
@@ -1892,6 +2157,8 @@ function QuotesPage({ createRequest = 0 }) {
   const [convertForm, setConvertForm] = useState({});
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({ contactId: '', title: '', description: '', amount: '' });
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState({ contactId: '', title: '', description: '', amount: '' });
 
   async function load() {
     const [data, contactRows] = await Promise.all([api('/quotes'), api('/contacts')]);
@@ -1922,6 +2189,58 @@ function QuotesPage({ createRequest = 0 }) {
       setMessage('Cotizacion creada como borrador.');
     } catch (err) {
       setMessage('No se pudo crear la cotizacion.');
+      console.error(err);
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  function startEdit(row) {
+    setEditing(row);
+    setEditForm({
+      contactId: row.contactId || '',
+      title: row.title || '',
+      description: row.description || '',
+      amount: row.amount ?? ''
+    });
+  }
+
+  async function saveQuote(e) {
+    e.preventDefault();
+    if (!editing) return;
+    setWorkingId(editing.id);
+    setMessage('');
+    try {
+      await api(`/quotes/${editing.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ...editForm, amount: Number(editForm.amount || 0) })
+      });
+      setEditing(null);
+      await load();
+      setMessage('Cotizacion actualizada.');
+    } catch (err) {
+      setMessage('No se pudo editar la cotizacion.');
+      console.error(err);
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  async function cancelQuote(row) {
+    if (!window.confirm('¿Confirmas cancelar esta cotizacion?')) return;
+    await updateStatus(row, 'CANCELLED');
+  }
+
+  async function deleteQuote(row) {
+    if (!window.confirm('¿Eliminar definitivamente esta cotizacion?')) return;
+    setWorkingId(row.id);
+    setMessage('');
+    try {
+      await api(`/quotes/${row.id}`, { method: 'DELETE' });
+      await load();
+      setMessage('Cotizacion eliminada.');
+    } catch (err) {
+      setMessage('Solo se pueden eliminar cotizaciones en borrador, fallidas o canceladas.');
       console.error(err);
     } finally {
       setWorkingId(null);
@@ -2067,10 +2386,13 @@ function QuotesPage({ createRequest = 0 }) {
                   {row.lead && <div className="mt-1 text-xs text-slate-400">Lead: {row.lead.title}</div>}
                 </td>
                 <td className="p-4">{row.amount ? `$${Number(row.amount).toLocaleString('es-CL')}` : '-'}</td>
-                <td className="p-4">{row.status}</td>
+                <td className="p-4">{statusLabel(row.status)}</td>
                 <td className="p-4">{formatDate(row.sentAt || row.createdAt)}</td>
                 <td className="p-4">
                   <div className="flex flex-wrap gap-2">
+                    <button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 disabled:text-slate-400" onClick={() => startEdit(row)} disabled={row.status === 'CONVERTED'}>
+                      Editar
+                    </button>
                     <button
                       className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                       onClick={() => sendQuote(row)}
@@ -2099,6 +2421,8 @@ function QuotesPage({ createRequest = 0 }) {
                     >
                       Crear atencion
                     </button>
+                    {!['CANCELLED', 'CONVERTED'].includes(row.status) && <button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700" onClick={() => cancelQuote(row)}>Cancelar</button>}
+                    {['DRAFT', 'FAILED', 'CANCELLED'].includes(row.status) && <button className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700" onClick={() => deleteQuote(row)}>Eliminar</button>}
                   </div>
                 </td>
               </tr>
@@ -2107,6 +2431,19 @@ function QuotesPage({ createRequest = 0 }) {
           </tbody>
         </table>
       </div>
+
+      {editing && (
+        <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={saveQuote}>
+          <div className="flex items-center justify-between gap-4"><h2 className="text-lg font-semibold">Editar cotizacion</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setEditing(null)}>Cancelar</button></div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-medium">Cliente<select className="mt-1 w-full rounded-lg border p-3" value={editForm.contactId} onChange={(e) => setEditForm({ ...editForm, contactId: e.target.value })} required>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.fullName || contact.phone}</option>)}</select></label>
+            <label className="text-sm font-medium">Servicio<input className="mt-1 w-full rounded-lg border p-3" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} required /></label>
+            <label className="text-sm font-medium">Monto<input type="number" min="0" className="mt-1 w-full rounded-lg border p-3" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })} required /></label>
+            <label className="text-sm font-medium md:col-span-2">Detalle<textarea className="mt-1 min-h-24 w-full rounded-lg border p-3" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></label>
+          </div>
+          <button className="mt-4 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={workingId === editing.id}>{workingId === editing.id ? 'Guardando...' : 'Guardar cambios'}</button>
+        </form>
+      )}
 
       {converting && (
         <div className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100">

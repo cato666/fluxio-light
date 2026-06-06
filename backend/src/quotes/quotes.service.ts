@@ -5,6 +5,7 @@ import { KapsoService } from '../kapso/kapso.service';
 import { MessageTemplatesService } from '../message-templates/message-templates.service';
 import { CreateAttendanceFromQuoteDto } from './dto/create-attendance-from-quote.dto';
 import { CreateQuoteDto } from './dto/create-quote.dto';
+import { UpdateQuoteDto } from './dto/update-quote.dto';
 
 @Injectable()
 export class QuotesService {
@@ -161,6 +162,33 @@ export class QuotesService {
     };
   }
 
+  async update(professionalId: string, id: string, dto: UpdateQuoteDto) {
+    const quote = await this.prisma.quote.findFirst({ where: { id, professionalId } });
+    if (!quote) throw new NotFoundException('Quote not found.');
+    if (quote.status === 'CONVERTED') throw new BadRequestException('Converted quote cannot be edited.');
+
+    if (dto.contactId) {
+      const contact = await this.prisma.contact.findFirst({ where: { id: dto.contactId, professionalId } });
+      if (!contact) throw new BadRequestException('Contact does not belong to this professional.');
+    }
+
+    const contact = dto.contactId
+      ? await this.prisma.contact.findUnique({ where: { id: dto.contactId } })
+      : await this.prisma.contact.findUnique({ where: { id: quote.contactId || '' } });
+    const title = dto.title ?? quote.title;
+    const description = dto.description ?? quote.description;
+    const amount = dto.amount ?? quote.amount;
+
+    return this.prisma.quote.update({
+      where: { id: quote.id },
+      data: {
+        ...dto,
+        message: await this.buildQuoteMessage(professionalId, title, description, amount, contact?.fullName)
+      },
+      include: { contact: true, lead: true, attendance: true }
+    });
+  }
+
   async updateStatus(professionalId: string, id: string, status: QuoteStatus) {
     const quote = await this.prisma.quote.findFirst({ where: { id, professionalId } });
     if (!quote) throw new NotFoundException('Quote not found.');
@@ -174,6 +202,18 @@ export class QuotesService {
       },
       include: { contact: true, lead: true, attendance: true }
     });
+  }
+
+  async remove(professionalId: string, id: string) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { id, professionalId },
+      include: { attendance: true }
+    });
+    if (!quote) throw new NotFoundException('Quote not found.');
+    if (quote.attendance || !['DRAFT', 'FAILED', 'CANCELLED'].includes(quote.status)) {
+      throw new BadRequestException('Sent or converted quote cannot be deleted. Cancel it instead.');
+    }
+    return this.prisma.quote.delete({ where: { id: quote.id } });
   }
 
   async createAttendance(professionalId: string, id: string, dto: CreateAttendanceFromQuoteDto) {
@@ -229,7 +269,9 @@ export class QuotesService {
           where: { id: quote.leadId },
           data: {
             status: 'WON',
-            estimatedValue: amount
+            estimatedValue: amount,
+            closedReason: 'Cotizacion convertida en atencion',
+            closedAt: new Date()
           }
         });
       }

@@ -3,6 +3,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
+import { CreateAttendanceFromAppointmentDto } from './dto/create-attendance-from-appointment.dto';
+import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('appointments')
@@ -25,8 +27,17 @@ export class AppointmentsController {
   }
 
   @Patch(':id')
-  update(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: Partial<CreateAppointmentDto>) {
+  update(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateAppointmentDto) {
     return this.service.update(user.professionalId, id, dto);
+  }
+
+  @Post(':id/create-attendance')
+  createAttendance(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() dto: CreateAttendanceFromAppointmentDto
+  ) {
+    return this.service.createAttendance(user.professionalId, id, dto);
   }
 
   @Delete(':id')

@@ -18,6 +18,8 @@ La interfaz del profesional prioriza la operacion diaria:
 - modulos secundarios agrupados bajo `Mas`;
 - dashboard `Hoy` con agenda, conversaciones por responder, cotizaciones pendientes y cobros pendientes;
 - menu global `Nueva accion` para acceder rapidamente a clientes, agenda, atenciones, cotizaciones y WhatsApp;
+- ciclo operativo web completo: reprogramar o cancelar agenda, convertir una cita en atencion e ingreso, cerrar leads con motivo, editar o cancelar cotizaciones y actualizar atenciones/pagos;
+- eliminacion protegida: cotizaciones enviadas y atenciones con gastos o evidencias conservan su trazabilidad y deben cancelarse en lugar de borrarse;
 - estados de negocio mostrados con etiquetas legibles en español, manteniendo los enums internos en backend.
 
 ## Estructura

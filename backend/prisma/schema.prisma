@@ -208,6 +208,8 @@ model Lead {
   status         LeadStatus   @default(NEW)
   estimatedValue Int?
   nextActionAt   DateTime?
+  closedReason   String?
+  closedAt       DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -260,6 +262,7 @@ model Appointment {
   updatedAt      DateTime     @updatedAt
 
   evidenceFiles  EvidenceFile[]
+  attendance     Attendance?
 }
 
 model Attendance {
@@ -270,6 +273,8 @@ model Attendance {
   contact        Contact?     @relation(fields: [contactId], references: [id])
   quoteId        String?      @unique
   quote          Quote?       @relation(fields: [quoteId], references: [id])
+  appointmentId  String?      @unique
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
   title          String
   description    String?
   amount         Int          @default(0)

@@ -4,6 +4,7 @@ import { KapsoService } from '../kapso/kapso.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { SendQuoteDto } from './dto/send-quote.dto';
 import { CreateAttendanceFromLeadDto } from './dto/create-attendance-from-lead.dto';
+import { CloseLeadDto } from './dto/close-lead.dto';
 
 @Injectable()
 export class LeadsService {
@@ -80,6 +81,27 @@ export class LeadsService {
     return this.prisma.lead.update({
       where: { id: lead.id },
       data: { ...leadData, contactId } as any,
+      include: { contact: true }
+    });
+  }
+
+  async close(professionalId: string, id: string, dto: CloseLeadDto) {
+    if (!['WON', 'LOST'].includes(dto.status)) {
+      throw new BadRequestException('Lead can only be closed as WON or LOST.');
+    }
+    if (!dto.reason.trim()) {
+      throw new BadRequestException('Closing reason is required.');
+    }
+    const lead = await this.prisma.lead.findFirst({ where: { id, professionalId } });
+    if (!lead) throw new NotFoundException('Lead not found.');
+
+    return this.prisma.lead.update({
+      where: { id: lead.id },
+      data: {
+        status: dto.status,
+        closedReason: dto.reason.trim(),
+        closedAt: new Date()
+      },
       include: { contact: true }
     });
   }
@@ -225,7 +247,9 @@ export class LeadsService {
         where: { id: lead.id },
         data: {
           status: 'WON',
-          estimatedValue: amount
+          estimatedValue: amount,
+          closedReason: 'Atencion creada desde lead',
+          closedAt: new Date()
         },
         include: { contact: true }
       });

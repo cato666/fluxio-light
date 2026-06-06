@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { CreateExpenseDto } from '../expenses/dto/create-expense.dto';
+import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 
 @Injectable()
 export class AttendancesService {
@@ -97,5 +98,68 @@ export class AttendancesService {
       expense,
       attendance: await this.get(professionalId, attendance.id)
     };
+  }
+
+  async update(professionalId: string, id: string, dto: UpdateAttendanceDto) {
+    const attendance = await this.prisma.attendance.findFirst({
+      where: { id, professionalId },
+      include: { incomeRecord: true }
+    });
+    if (!attendance) throw new NotFoundException('Attendance not found.');
+
+    const { paymentStatus, paymentMethod, ...attendanceData } = dto;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.attendance.update({
+        where: { id: attendance.id },
+        data: attendanceData
+      });
+      if (attendance.incomeRecord) {
+        await tx.incomeRecord.update({
+          where: { id: attendance.incomeRecord.id },
+          data: {
+            contactId: dto.contactId,
+            description: dto.title,
+            amount: dto.amount,
+            paymentStatus,
+            paymentMethod,
+            paidAt: paymentStatus === 'PAID' ? new Date() : paymentStatus ? null : undefined
+          }
+        });
+      }
+      return tx.attendance.findUnique({
+        where: { id: attendance.id },
+        include: { contact: true, incomeRecord: true, expenses: true, evidenceFiles: true }
+      });
+    });
+  }
+
+  async remove(professionalId: string, id: string) {
+    const attendance = await this.prisma.attendance.findFirst({
+      where: { id, professionalId },
+      include: { expenses: true, evidenceFiles: true, incomeRecord: true, quote: true, appointment: true }
+    });
+    if (!attendance) throw new NotFoundException('Attendance not found.');
+    if (attendance.expenses.length || attendance.evidenceFiles.length) {
+      throw new BadRequestException('Attendance with expenses or evidence cannot be deleted. Cancel it instead.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (attendance.incomeRecord) {
+        await tx.incomeRecord.delete({ where: { id: attendance.incomeRecord.id } });
+      }
+      if (attendance.quote) {
+        await tx.quote.update({
+          where: { id: attendance.quote.id },
+          data: { status: 'ACCEPTED', convertedAt: null }
+        });
+      }
+      if (attendance.appointment) {
+        await tx.appointment.update({
+          where: { id: attendance.appointment.id },
+          data: { status: 'SCHEDULED' }
+        });
+      }
+      return tx.attendance.delete({ where: { id: attendance.id } });
+    });
   }
 }

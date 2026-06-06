@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AttendancesService } from './attendances.service';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { CreateExpenseDto } from '../expenses/dto/create-expense.dto';
+import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('attendances')
@@ -28,5 +29,15 @@ export class AttendancesController {
   @Post(':id/expenses')
   addExpense(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: CreateExpenseDto) {
     return this.service.addExpense(user.professionalId, id, dto);
+  }
+
+  @Patch(':id')
+  update(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: UpdateAttendanceDto) {
+    return this.service.update(user.professionalId, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.service.remove(user.professionalId, id);
   }
 }

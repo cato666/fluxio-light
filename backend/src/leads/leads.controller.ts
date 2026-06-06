@@ -5,6 +5,7 @@ import { LeadsService } from './leads.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { SendQuoteDto } from './dto/send-quote.dto';
 import { CreateAttendanceFromLeadDto } from './dto/create-attendance-from-lead.dto';
+import { CloseLeadDto } from './dto/close-lead.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('leads')
@@ -29,6 +30,11 @@ export class LeadsController {
   @Post(':id/create-attendance')
   createAttendance(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: CreateAttendanceFromLeadDto) {
     return this.service.createAttendanceFromLead(user.professionalId, id, dto);
+  }
+
+  @Patch(':id/close')
+  close(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: CloseLeadDto) {
+    return this.service.close(user.professionalId, id, dto);
   }
 
   @Post()

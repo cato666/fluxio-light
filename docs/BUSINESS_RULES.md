@@ -6,6 +6,7 @@
 - Estado inicial: `NEW`.
 - Si se agenda una cita: `SCHEDULED`.
 - Si se crea una atencion desde el lead: `WON`.
+- Un lead se cierra como `WON` o `LOST` con motivo obligatorio y fecha de cierre.
 - Si el profesional marca como no interesado: `LOST`.
 
 ## Contactos
@@ -19,6 +20,8 @@
 - Toda atencion puede tener evidencias.
 - Toda atencion puede tener gastos asociados.
 - Una atencion tiene estado: `DRAFT`, `DONE`, `CANCELLED`.
+- Una cita completada desde Agenda crea una sola atencion y su ingreso asociado; no puede convertirse dos veces.
+- Reprogramar una cita conserva su identidad e historial. Una cita con atencion o evidencias se cancela, no se elimina.
 - La utilidad estimada se calcula como `ingreso asociado - gastos asociados`.
 - El detalle de atencion debe mostrar ingreso, gastos, utilidad, evidencias y cliente.
 
@@ -27,6 +30,14 @@
 - Estados de pago: `PAID`, `PENDING`, `PARTIAL`.
 - Medio de pago: `CASH`, `TRANSFER`, `CARD`, `OTHER`.
 - Si el ingreso esta vinculado a una atencion y se edita el monto, se sincroniza `Attendance.amount`.
+- Editar monto, cliente o datos de pago desde la atencion sincroniza su `IncomeRecord`.
+- Una atencion con gastos o evidencias no puede eliminarse; puede marcarse `CANCELLED`.
+
+## Cotizaciones
+
+- Una cotizacion en borrador, fallida o cancelada se puede eliminar.
+- Una cotizacion enviada o convertida conserva trazabilidad y debe cancelarse en lugar de eliminarse.
+- Una cotizacion convertida no se puede editar.
 
 ## Gastos
 

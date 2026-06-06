@@ -34,14 +34,23 @@ GET/POST /contacts
 GET/PATCH/DELETE /contacts/:id
 
 GET/POST /leads
-PATCH /leads/:id/status
+PATCH /leads/:id
+PATCH /leads/:id/close
+DELETE /leads/:id
 
 GET/POST /appointments
-PATCH /appointments/:id/status
+PATCH/DELETE /appointments/:id
+POST /appointments/:id/create-attendance
+
+GET/POST /quotes
+PATCH/DELETE /quotes/:id
+PATCH /quotes/:id/status
+POST /quotes/:id/create-attendance
 
 GET/POST /attendances
-GET /attendances/:id
+PATCH/DELETE /attendances/:id
 POST /attendances/:id/expenses
+
 GET/POST /income
 GET/POST /expenses
 GET/POST /evidence
