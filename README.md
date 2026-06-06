@@ -20,6 +20,9 @@ La interfaz del profesional prioriza la operacion diaria:
 - menu global `Nueva accion` para acceder rapidamente a clientes, agenda, atenciones, cotizaciones y WhatsApp;
 - ciclo operativo web completo: reprogramar o cancelar agenda, convertir una cita en atencion e ingreso, cerrar leads con motivo, editar o cancelar cotizaciones y actualizar atenciones/pagos;
 - eliminacion protegida: cotizaciones enviadas y atenciones con gastos o evidencias conservan su trazabilidad y deben cancelarse en lugar de borrarse;
+- validacion UX transversal: errores legibles de API, timeout de red, bloqueo de doble envio, validacion de formularios, estados de carga y mensajes de exito/error accesibles;
+- busqueda, filtro Demo/Reales, contador y paginacion en clientes, agenda, leads, cotizaciones, atenciones, ingresos y gastos;
+- tablas operativas con desplazamiento horizontal controlado para pantallas moviles;
 - estados de negocio mostrados con etiquetas legibles en español, manteniendo los enums internos en backend.
 
 ## Estructura

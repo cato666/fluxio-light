@@ -1,24 +1,64 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, Calendar, Camera, CheckCircle, Clipboard, DollarSign, FileText, Home, LogOut, MessageCircle, MoreHorizontal, Plus, Send, Settings, ShieldCheck, TrendingUp, Users, WalletCards, X } from 'lucide-react';
+import { Activity, AlertCircle, Calendar, Camera, CheckCircle, ChevronLeft, ChevronRight, Clipboard, DollarSign, FileText, Home, LoaderCircle, LogOut, MessageCircle, MoreHorizontal, Plus, Search, Send, Settings, ShieldCheck, TrendingUp, Users, WalletCards, X } from 'lucide-react';
 import './styles/index.css';
 
 const API_URL = window.__FLUXIO_CONFIG__?.VITE_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-function api(path, options = {}) {
+async function api(path, options = {}) {
   const token = localStorage.getItem('token');
   const isFormData = options.body instanceof FormData;
-  return fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      signal: options.signal || controller.signal,
+      headers: {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {})
+      }
+    });
+    const text = await response.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
     }
-  }).then(async (r) => {
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
-  });
+    if (!response.ok) {
+      const rawMessage = Array.isArray(data?.message) ? data.message.join('. ') : data?.message || data?.error || data;
+      const error = new Error(rawMessage || `La solicitud fallo con codigo ${response.status}.`);
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('La solicitud demoro demasiado. Revisa tu conexion e intenta nuevamente.');
+    if (error instanceof TypeError) throw new Error('No fue posible conectar con Fluxio. Revisa tu conexion o intenta nuevamente.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function errorMessage(error, fallback = 'No se pudo completar la accion.') {
+  const message = String(error?.message || '').trim();
+  if (!message) return fallback;
+  const translations = [
+    ['Contact does not belong to this professional.', 'El cliente seleccionado no pertenece a tu cuenta.'],
+    ['Quote requires a contact or a lead with contact.', 'Selecciona un cliente para crear la cotizacion.'],
+    ['Closing reason is required.', 'Debes indicar un motivo de cierre.'],
+    ['Appointment already has an attendance.', 'Este servicio ya fue convertido en una atencion.'],
+    ['Cancelled appointment cannot be completed.', 'Un servicio cancelado no se puede completar.'],
+    ['Attendance with expenses or evidence cannot be deleted.', 'Esta atencion tiene gastos o evidencias. Puedes cancelarla, pero no eliminarla.'],
+    ['Sent or converted quote cannot be deleted.', 'Una cotizacion enviada o convertida no se puede eliminar. Puedes cancelarla.']
+  ];
+  const translated = translations.find(([source]) => message.includes(source));
+  if (translated) return translated[1];
+  if (/^(No |La solicitud |Debes |Selecciona |Esta |Este |Un |Una )/.test(message)) return message;
+  return message.length < 180 ? `No se pudo completar: ${message}` : fallback;
 }
 
 function formatDate(value) {
@@ -105,6 +145,67 @@ function filterDemoRows(rows, filter) {
   return rows;
 }
 
+function usePagedRows(rows, demoFilter, search, getSearchText, pageSize = 10) {
+  const [page, setPage] = useState(1);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredRows = filterDemoRows(rows, demoFilter).filter((row) => {
+    if (!normalizedSearch) return true;
+    return String(getSearchText(row) || '').toLowerCase().includes(normalizedSearch);
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const visibleRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [demoFilter, normalizedSearch, rows.length]);
+
+  return { visibleRows, totalRows: filteredRows.length, page: safePage, totalPages, setPage };
+}
+
+function ListToolbar({ search, setSearch, demoFilter, setDemoFilter, placeholder = 'Buscar...', totalRows }) {
+  return (
+    <div className="mt-5 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+      <label className="relative block min-w-0 flex-1 sm:max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+        <input aria-label="Buscar registros" className="w-full rounded-lg border border-slate-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={placeholder} />
+      </label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-xs font-medium text-slate-500">{totalRows} resultados</span>
+        <DemoFilter value={demoFilter} onChange={setDemoFilter} />
+      </div>
+    </div>
+  );
+}
+
+function Pagination({ page, totalPages, setPage }) {
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between border-t border-slate-100 bg-white px-4 py-3 text-sm">
+      <span className="text-slate-500">Pagina {page} de {totalPages}</span>
+      <div className="flex gap-2">
+        <button type="button" title="Pagina anterior" className="rounded-lg border p-2 text-slate-600 disabled:opacity-40" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={18} /></button>
+        <button type="button" title="Pagina siguiente" className="rounded-lg border p-2 text-slate-600 disabled:opacity-40" disabled={page >= totalPages} onClick={() => setPage(page + 1)}><ChevronRight size={18} /></button>
+      </div>
+    </div>
+  );
+}
+
+function FeedbackMessage({ message }) {
+  if (!message) return null;
+  const isError = /^(No |La solicitud |La hora |Debes |Selecciona |Esta |Este |Un |Una )/.test(message);
+  return (
+    <div className={`mt-4 flex items-start gap-2 rounded-lg p-3 text-sm ${isError ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`} role={isError ? 'alert' : 'status'}>
+      {isError ? <AlertCircle className="mt-0.5 shrink-0" size={17} /> : <CheckCircle className="mt-0.5 shrink-0" size={17} />}
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function LoadingRows({ columns, label = 'Cargando registros...' }) {
+  return <tr><td colSpan={columns} className="p-8 text-center text-sm text-slate-500"><LoaderCircle className="mx-auto mb-2 animate-spin" size={22} />{label}</td></tr>;
+}
+
 function DemoBadge({ row }) {
   if (!isDemoRow(row)) return null;
   return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Demo</span>;
@@ -141,11 +242,14 @@ function Login({ onLogin }) {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
+    if (submitting) return;
     setError('');
     setNotice('');
+    setSubmitting(true);
     try {
       const data = await api('/auth/login', {
         method: 'POST',
@@ -156,14 +260,18 @@ function Login({ onLogin }) {
       onLogin(data.user);
     } catch (err) {
       const text = err?.message || '';
-      setError(text.includes('pendiente') ? 'Tu cuenta esta pendiente de aprobacion por Fluxio.' : 'No se pudo iniciar sesion');
+      setError(text.includes('pendiente') ? 'Tu cuenta esta pendiente de aprobacion por Fluxio.' : errorMessage(err, 'Email o contrasena incorrectos.'));
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function register(e) {
     e.preventDefault();
+    if (submitting) return;
     setError('');
     setNotice('');
+    setSubmitting(true);
     try {
       const data = await api('/auth/register', {
         method: 'POST',
@@ -174,7 +282,9 @@ function Login({ onLogin }) {
       setPassword('');
     } catch (err) {
       const text = err?.message || '';
-      setError(text.includes('existe') ? 'Ya existe una cuenta con ese email.' : 'No se pudo crear la cuenta.');
+      setError(text.includes('existe') ? 'Ya existe una cuenta con ese email.' : errorMessage(err, 'No se pudo crear la cuenta.'));
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -216,10 +326,10 @@ function Login({ onLogin }) {
         )}
 
         <label className="block text-sm font-medium text-slate-700">Email</label>
-        <input className="mt-1 mb-4 w-full rounded-lg border p-3" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className="mt-1 mb-4 w-full rounded-lg border p-3" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
 
         <label className="block text-sm font-medium text-slate-700">Contrasena</label>
-        <input className="mt-1 mb-4 w-full rounded-lg border p-3" type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} />
+        <input className="mt-1 mb-4 w-full rounded-lg border p-3" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
 
         {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         {notice && <div className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</div>}
@@ -229,8 +339,9 @@ function Login({ onLogin }) {
           </div>
         )}
 
-        <button className="w-full rounded-lg bg-emerald-600 p-3 font-semibold text-white hover:bg-emerald-700">
-          {mode === 'login' ? 'Ingresar' : 'Enviar solicitud'}
+        <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 p-3 font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-400" disabled={submitting}>
+          {submitting && <LoaderCircle className="animate-spin" size={18} />}
+          {submitting ? 'Procesando...' : mode === 'login' ? 'Ingresar' : 'Enviar solicitud'}
         </button>
       </form>
     </div>
@@ -567,8 +678,8 @@ function ListPage({ title, endpoint, fields }) {
         <h1 className="text-3xl font-bold text-slate-900">{title}</h1>
         <DemoFilter value={demoFilter} onChange={setDemoFilter} />
       </div>
-      <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
-        <table className="w-full text-left text-sm">
+      <div className="mt-6 overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-slate-50 text-slate-500">
             <tr><th className="p-4">Tipo</th>{fields.map(f => <th key={f.key} className="p-4">{f.label}</th>)}</tr>
           </thead>
@@ -590,6 +701,9 @@ function ListPage({ title, endpoint, fields }) {
 function AppointmentsPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
   const [contacts, setContacts] = useState([]);
+  const [demoFilter, setDemoFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
   const [completing, setCompleting] = useState(null);
@@ -599,16 +713,28 @@ function AppointmentsPage({ createRequest = 0 }) {
   const [completionForm, setCompletionForm] = useState({ amount: '', paymentStatus: 'PENDING', paymentMethod: 'OTHER' });
 
   async function load() {
-    const [appointmentRows, contactRows] = await Promise.all([api('/appointments'), api('/contacts')]);
-    setRows(appointmentRows);
-    setContacts(contactRows);
+    setLoading(true);
+    try {
+      const [appointmentRows, contactRows] = await Promise.all([api('/appointments'), api('/contacts')]);
+      setRows(appointmentRows);
+      setContacts(contactRows);
+    } catch (err) {
+      setMessage(errorMessage(err, 'No se pudo cargar la agenda.'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load().catch(console.error); }, []);
   useEffect(() => { if (createRequest > 0) setCreating(true); }, [createRequest]);
+  const appointmentList = usePagedRows(rows, demoFilter, search, (row) => [row.title, row.description, row.location, row.status, row.contact?.fullName, row.contact?.phone].filter(Boolean).join(' '));
 
   async function createAppointment(e) {
     e.preventDefault();
+    if (form.endsAt && new Date(form.endsAt) <= new Date(form.startsAt)) {
+      setMessage('La hora de termino debe ser posterior al inicio.');
+      return;
+    }
     setSaving(true);
     setMessage('');
     try {
@@ -625,7 +751,7 @@ function AppointmentsPage({ createRequest = 0 }) {
       await load();
       setMessage('Servicio agendado.');
     } catch (err) {
-      setMessage('No se pudo agendar el servicio.');
+      setMessage(errorMessage(err, 'No se pudo agendar el servicio.'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -649,6 +775,10 @@ function AppointmentsPage({ createRequest = 0 }) {
   async function saveAppointment(e) {
     e.preventDefault();
     if (!editing) return;
+    if (form.endsAt && new Date(form.endsAt) <= new Date(form.startsAt)) {
+      setMessage('La hora de termino debe ser posterior al inicio.');
+      return;
+    }
     setSaving(true);
     setMessage('');
     try {
@@ -666,7 +796,7 @@ function AppointmentsPage({ createRequest = 0 }) {
       await load();
       setMessage('Servicio actualizado.');
     } catch (err) {
-      setMessage('No se pudo actualizar el servicio.');
+      setMessage(errorMessage(err, 'No se pudo actualizar el servicio.'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -742,7 +872,8 @@ function AppointmentsPage({ createRequest = 0 }) {
         <div><h1 className="text-3xl font-bold text-slate-900">Agenda</h1><p className="mt-1 text-slate-500">Servicios programados con fecha, cliente y lugar.</p></div>
         <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Agendar servicio</button>
       </div>
-      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      <FeedbackMessage message={message} />
+      <ListToolbar search={search} setSearch={setSearch} demoFilter={demoFilter} setDemoFilter={setDemoFilter} totalRows={appointmentList.totalRows} placeholder="Buscar por cliente, servicio o lugar..." />
       {(creating || editing) && (
         <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={editing ? saveAppointment : createAppointment}>
           <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">{editing ? 'Editar servicio agendado' : 'Nuevo servicio agendado'}</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => { setCreating(false); setEditing(null); }}>Cancelar</button></div>
@@ -760,8 +891,9 @@ function AppointmentsPage({ createRequest = 0 }) {
       )}
       <div className="mt-6 overflow-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
         <table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-4">Fecha</th><th className="p-4">Cliente</th><th className="p-4">Servicio</th><th className="p-4">Lugar</th><th className="p-4">Estado</th><th className="p-4">Acciones</th></tr></thead>
-          <tbody>{rows.map((row) => <tr key={row.id} className="border-t"><td className="p-4">{formatDate(row.startsAt)}</td><td className="p-4">{row.contact?.fullName || row.contact?.phone || '-'}</td><td className="p-4 font-medium">{row.title}</td><td className="p-4">{row.location || '-'}</td><td className="p-4">{statusLabel(row.status)}</td><td className="p-4"><div className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => startEdit(row)}>Editar</button>{row.status === 'SCHEDULED' && !row.attendance && <button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white" onClick={() => startCompletion(row)}>Completar</button>}{row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => changeStatus(row, 'CANCELLED')}>Cancelar</button>}{row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => changeStatus(row, 'NO_SHOW')}>No asistio</button>}{!row.attendance && <button className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700" onClick={() => deleteAppointment(row)}>Eliminar</button>}</div></td></tr>)}{rows.length === 0 && <tr><td colSpan={6} className="p-6 text-slate-500">No tienes servicios agendados.</td></tr>}</tbody>
+          <tbody>{loading ? <LoadingRows columns={6} label="Cargando agenda..." /> : appointmentList.visibleRows.map((row) => <tr key={row.id} className="border-t"><td className="p-4">{formatDate(row.startsAt)}</td><td className="p-4">{row.contact?.fullName || row.contact?.phone || '-'}</td><td className="p-4 font-medium">{row.title}</td><td className="p-4">{row.location || '-'}</td><td className="p-4">{statusLabel(row.status)}</td><td className="p-4"><div className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => startEdit(row)} disabled={saving}>Editar</button>{row.status === 'SCHEDULED' && !row.attendance && <button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-400" onClick={() => startCompletion(row)} disabled={saving}>Completar</button>}{row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-40" onClick={() => changeStatus(row, 'CANCELLED')} disabled={saving}>Cancelar</button>}{row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-40" onClick={() => changeStatus(row, 'NO_SHOW')} disabled={saving}>No asistio</button>}{!row.attendance && <button className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-40" onClick={() => deleteAppointment(row)} disabled={saving}>Eliminar</button>}</div></td></tr>)}{!loading && appointmentList.totalRows === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-500">{search ? 'No encontramos servicios con esa busqueda.' : 'No tienes servicios agendados.'}</td></tr>}</tbody>
         </table>
+        <Pagination page={appointmentList.page} totalPages={appointmentList.totalPages} setPage={appointmentList.setPage} />
       </div>
       {completing && (
         <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={completeAppointment}>
@@ -782,6 +914,8 @@ function LeadsPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({ contactId: '', title: '', description: '', source: 'Manual', estimatedValue: '' });
@@ -796,9 +930,16 @@ function LeadsPage({ createRequest = 0 }) {
   const [closeForm, setCloseForm] = useState({ status: 'LOST', reason: '' });
 
   async function load() {
-    const [data, contactRows] = await Promise.all([api('/leads'), api('/contacts')]);
-    setRows(data);
-    setContacts(contactRows);
+    setLoading(true);
+    try {
+      const [data, contactRows] = await Promise.all([api('/leads'), api('/contacts')]);
+      setRows(data);
+      setContacts(contactRows);
+    } catch (err) {
+      setMessage(errorMessage(err, 'No se pudieron cargar los leads.'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -807,7 +948,7 @@ function LeadsPage({ createRequest = 0 }) {
   useEffect(() => {
     if (createRequest > 0) setCreating(true);
   }, [createRequest]);
-  const visibleRows = filterDemoRows(rows, demoFilter);
+  const leadList = usePagedRows(rows, demoFilter, search, (row) => [row.title, row.description, row.source, row.status, row.contact?.fullName, row.contact?.phone].filter(Boolean).join(' '));
 
   async function createLead(e) {
     e.preventDefault();
@@ -826,7 +967,7 @@ function LeadsPage({ createRequest = 0 }) {
       await load();
       setMessage('Lead creado.');
     } catch (err) {
-      setMessage('No se pudo crear el lead. Selecciona un cliente y revisa los datos.');
+      setMessage(errorMessage(err, 'No se pudo crear el lead. Selecciona un cliente y revisa los datos.'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -864,7 +1005,7 @@ function LeadsPage({ createRequest = 0 }) {
       await load();
       setMessage('Lead actualizado.');
     } catch (err) {
-      setMessage('No se pudo guardar el lead.');
+      setMessage(errorMessage(err, 'No se pudo guardar el lead.'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -960,14 +1101,14 @@ function LeadsPage({ createRequest = 0 }) {
           <p className="mt-1 text-slate-500">Edita datos de contacto y envia cotizaciones por WhatsApp.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <DemoFilter value={demoFilter} onChange={setDemoFilter} />
           <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700" onClick={() => setCreating(true)}>
             Nuevo lead
           </button>
         </div>
       </div>
 
-      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      <FeedbackMessage message={message} />
+      <ListToolbar search={search} setSearch={setSearch} demoFilter={demoFilter} setDemoFilter={setDemoFilter} totalRows={leadList.totalRows} placeholder="Buscar por cliente, telefono o servicio..." />
 
       {creating && (
         <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createLead}>
@@ -999,8 +1140,8 @@ function LeadsPage({ createRequest = 0 }) {
         </form>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
-        <table className="w-full text-left text-sm">
+      <div className="mt-6 overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="p-4">Titulo</th>
@@ -1013,7 +1154,7 @@ function LeadsPage({ createRequest = 0 }) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row) => (
+            {loading ? <LoadingRows columns={7} label="Cargando leads..." /> : leadList.visibleRows.map((row) => (
               <tr key={row.id} className="border-t">
                 <td className="p-4">{row.title}</td>
                 <td className="p-4"><DemoBadge row={row} /></td>
@@ -1049,9 +1190,10 @@ function LeadsPage({ createRequest = 0 }) {
                 </td>
               </tr>
             ))}
-            {visibleRows.length === 0 && <tr><td className="p-6 text-slate-500" colSpan={7}>Sin registros.</td></tr>}
+            {!loading && leadList.totalRows === 0 && <tr><td className="p-8 text-center text-slate-500" colSpan={7}>{search ? 'No encontramos leads con esa busqueda.' : 'Aun no tienes leads registrados.'}</td></tr>}
           </tbody>
         </table>
+        <Pagination page={leadList.page} totalPages={leadList.totalPages} setPage={leadList.setPage} />
       </div>
 
       {editing && (
@@ -1157,20 +1299,29 @@ function LeadsPage({ createRequest = 0 }) {
 function EditableRecordsPage({ title, endpoint, fields, refreshKey = 0 }) {
   const [rows, setRows] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function load() {
-    const data = await api(endpoint);
-    setRows(data);
+    setLoading(true);
+    try {
+      const data = await api(endpoint);
+      setRows(data);
+    } catch (err) {
+      setMessage(errorMessage(err, `No se pudo cargar ${title.toLowerCase()}.`));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     load().catch(console.error);
   }, [endpoint, refreshKey]);
-  const visibleRows = filterDemoRows(rows, demoFilter);
+  const recordList = usePagedRows(rows, demoFilter, search, (row) => fields.map((field) => row[field.key]).concat([row.contact?.fullName, row.contact?.phone, row.attendance?.title]).filter(Boolean).join(' '));
 
   function startEdit(row) {
     setMessage('');
@@ -1204,7 +1355,7 @@ function EditableRecordsPage({ title, endpoint, fields, refreshKey = 0 }) {
       await load();
       setMessage(`${title} actualizado.`);
     } catch (err) {
-      setMessage(`No se pudo guardar ${title.toLowerCase()}.`);
+      setMessage(errorMessage(err, `No se pudo guardar ${title.toLowerCase()}.`));
       console.error(err);
     } finally {
       setSaving(false);
@@ -1215,11 +1366,11 @@ function EditableRecordsPage({ title, endpoint, fields, refreshKey = 0 }) {
     <div>
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-3xl font-bold text-slate-900">{title}</h1>
-        <DemoFilter value={demoFilter} onChange={setDemoFilter} />
       </div>
-      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
-      <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
-        <table className="w-full text-left text-sm">
+      <FeedbackMessage message={message} />
+      <ListToolbar search={search} setSearch={setSearch} demoFilter={demoFilter} setDemoFilter={setDemoFilter} totalRows={recordList.totalRows} placeholder={`Buscar en ${title.toLowerCase()}...`} />
+      <div className="mt-6 overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        <table className="w-full min-w-[1000px] text-left text-sm">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="p-4">Tipo</th>
@@ -1228,7 +1379,7 @@ function EditableRecordsPage({ title, endpoint, fields, refreshKey = 0 }) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row) => (
+            {loading ? <LoadingRows columns={fields.length + 2} /> : recordList.visibleRows.map((row) => (
               <tr key={row.id} className="border-t">
                 <td className="p-4"><DemoBadge row={row} /></td>
                 {fields.map((field) => (
@@ -1241,9 +1392,10 @@ function EditableRecordsPage({ title, endpoint, fields, refreshKey = 0 }) {
                 </td>
               </tr>
             ))}
-            {visibleRows.length === 0 && <tr><td className="p-6 text-slate-500" colSpan={fields.length + 2}>Sin registros.</td></tr>}
+            {!loading && recordList.totalRows === 0 && <tr><td className="p-8 text-center text-slate-500" colSpan={fields.length + 2}>{search ? 'No encontramos registros con esa busqueda.' : 'Sin registros.'}</td></tr>}
           </tbody>
         </table>
+        <Pagination page={recordList.page} totalPages={recordList.totalPages} setPage={recordList.setPage} />
       </div>
 
       {editing && (
@@ -1313,7 +1465,7 @@ function ExpensesPage({ createRequest = 0 }) {
       setMessage('Gasto registrado.');
       setRefreshKey((value) => value + 1);
     } catch (err) {
-      setMessage('No se pudo registrar el gasto.');
+      setMessage(errorMessage(err, 'No se pudo registrar el gasto.'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -1329,7 +1481,7 @@ function ExpensesPage({ createRequest = 0 }) {
         </div>
         <button className="w-fit rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Nuevo gasto</button>
       </div>
-      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      <FeedbackMessage message={message} />
       {creating && (
         <form className="mt-4 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createExpense}>
           <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Registrar gasto</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setCreating(false)}>Cancelar</button></div>
@@ -1350,6 +1502,8 @@ function AttendancesPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({ contactId: '', title: '', description: '', amount: '', paymentStatus: 'PAID', paymentMethod: 'TRANSFER' });
@@ -1362,9 +1516,16 @@ function AttendancesPage({ createRequest = 0 }) {
   const [attendanceEditForm, setAttendanceEditForm] = useState({});
 
   async function load() {
-    const [data, contactRows] = await Promise.all([api('/attendances'), api('/contacts')]);
-    setRows(data);
-    setContacts(contactRows);
+    setLoading(true);
+    try {
+      const [data, contactRows] = await Promise.all([api('/attendances'), api('/contacts')]);
+      setRows(data);
+      setContacts(contactRows);
+    } catch (err) {
+      setMessage(errorMessage(err, 'No se pudieron cargar las atenciones.'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function openDetail(id) {
@@ -1379,7 +1540,7 @@ function AttendancesPage({ createRequest = 0 }) {
     load().catch(console.error);
   }, []);
   useEffect(() => { if (createRequest > 0) setCreating(true); }, [createRequest]);
-  const visibleRows = filterDemoRows(rows, demoFilter);
+  const attendanceList = usePagedRows(rows, demoFilter, search, (row) => [row.title, row.description, row.status, row.contact?.fullName, row.contact?.phone, row.incomeRecord?.paymentStatus].filter(Boolean).join(' '));
 
   async function createAttendanceDirect(e) {
     e.preventDefault();
@@ -1395,7 +1556,7 @@ function AttendancesPage({ createRequest = 0 }) {
       await load();
       setMessage('Atencion e ingreso registrados.');
     } catch (err) {
-      setMessage('No se pudo registrar la atencion.');
+      setMessage(errorMessage(err, 'No se pudo registrar la atencion.'));
       console.error(err);
     } finally {
       setSavingExpense(false);
@@ -1537,12 +1698,12 @@ function AttendancesPage({ createRequest = 0 }) {
           <p className="mt-1 text-slate-500">Revisa clientes, ingresos, gastos asociados y utilidad estimada.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <DemoFilter value={demoFilter} onChange={setDemoFilter} />
           <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Registrar atencion</button>
         </div>
       </div>
 
-      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      <FeedbackMessage message={message} />
+      <ListToolbar search={search} setSearch={setSearch} demoFilter={demoFilter} setDemoFilter={setDemoFilter} totalRows={attendanceList.totalRows} placeholder="Buscar por cliente, telefono o servicio..." />
 
       {creating && (
         <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createAttendanceDirect}>
@@ -1559,8 +1720,8 @@ function AttendancesPage({ createRequest = 0 }) {
         </form>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
-        <table className="w-full text-left text-sm">
+      <div className="mt-6 overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="p-4">Servicio</th>
@@ -1574,7 +1735,7 @@ function AttendancesPage({ createRequest = 0 }) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row) => {
+            {loading ? <LoadingRows columns={8} label="Cargando atenciones..." /> : attendanceList.visibleRows.map((row) => {
               const expensesTotal = (row.expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
               return (
                 <tr key={row.id} className="border-t">
@@ -1593,9 +1754,10 @@ function AttendancesPage({ createRequest = 0 }) {
                 </tr>
               );
             })}
-            {visibleRows.length === 0 && <tr><td className="p-6 text-slate-500" colSpan={8}>Sin registros.</td></tr>}
+            {!loading && attendanceList.totalRows === 0 && <tr><td className="p-8 text-center text-slate-500" colSpan={8}>{search ? 'No encontramos atenciones con esa busqueda.' : 'Aun no tienes atenciones registradas.'}</td></tr>}
           </tbody>
         </table>
+        <Pagination page={attendanceList.page} totalPages={attendanceList.totalPages} setPage={attendanceList.setPage} />
       </div>
 
       {selected && (
@@ -1731,6 +1893,8 @@ function AttendancesPage({ createRequest = 0 }) {
 function ContactsPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
   const [message, setMessage] = useState('');
@@ -1739,8 +1903,15 @@ function ContactsPage({ createRequest = 0 }) {
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   async function load() {
-    const data = await api('/contacts');
-    setRows(data);
+    setLoading(true);
+    try {
+      const data = await api('/contacts');
+      setRows(data);
+    } catch (err) {
+      setMessage(errorMessage(err, 'No se pudieron cargar los clientes.'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -1750,7 +1921,7 @@ function ContactsPage({ createRequest = 0 }) {
   useEffect(() => {
     if (createRequest > 0) startCreate();
   }, [createRequest]);
-  const visibleRows = filterDemoRows(rows, demoFilter);
+  const contactList = usePagedRows(rows, demoFilter, search, (row) => [row.fullName, row.phone, row.email, row.commune, row.address, row.source].filter(Boolean).join(' '));
 
   function emptyForm() {
     return {
@@ -1792,7 +1963,7 @@ function ContactsPage({ createRequest = 0 }) {
       const data = await api(`/contacts/${row.id}/360`);
       setDetail(data);
     } catch (err) {
-      setMessage('No se pudo cargar el detalle del cliente.');
+      setMessage(errorMessage(err, 'No se pudo cargar el detalle del cliente.'));
       console.error(err);
     } finally {
       setLoadingDetail(false);
@@ -1821,7 +1992,7 @@ function ContactsPage({ createRequest = 0 }) {
       setEditing(null);
       await load();
     } catch (err) {
-      setMessage('No se pudo guardar el cliente.');
+      setMessage(errorMessage(err, 'No se pudo guardar el cliente.'));
       console.error(err);
     } finally {
       setSaving(false);
@@ -1836,17 +2007,17 @@ function ContactsPage({ createRequest = 0 }) {
           <p className="mt-1 text-slate-500">Crea y edita contactos para leads, atenciones e ingresos.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <DemoFilter value={demoFilter} onChange={setDemoFilter} />
           <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700" onClick={startCreate}>
             Nuevo cliente
           </button>
         </div>
       </div>
 
-      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      <FeedbackMessage message={message} />
+      <ListToolbar search={search} setSearch={setSearch} demoFilter={demoFilter} setDemoFilter={setDemoFilter} totalRows={contactList.totalRows} placeholder="Buscar por nombre, telefono o comuna..." />
 
-      <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
-        <table className="w-full text-left text-sm">
+      <div className="mt-6 overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        <table className="w-full min-w-[1000px] text-left text-sm">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="p-4">Nombre</th>
@@ -1859,7 +2030,7 @@ function ContactsPage({ createRequest = 0 }) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row) => (
+            {loading ? <LoadingRows columns={7} label="Cargando clientes..." /> : contactList.visibleRows.map((row) => (
               <tr key={row.id} className="border-t">
                 <td className="p-4">{row.fullName || '-'}</td>
                 <td className="p-4"><DemoBadge row={row} /></td>
@@ -1879,9 +2050,10 @@ function ContactsPage({ createRequest = 0 }) {
                 </td>
               </tr>
             ))}
-            {visibleRows.length === 0 && <tr><td className="p-6 text-slate-500" colSpan={7}>Sin registros.</td></tr>}
+            {!loading && contactList.totalRows === 0 && <tr><td className="p-8 text-center text-slate-500" colSpan={7}>{search ? 'No encontramos clientes con esa busqueda.' : 'Aun no tienes clientes registrados.'}</td></tr>}
           </tbody>
         </table>
+        <Pagination page={contactList.page} totalPages={contactList.totalPages} setPage={contactList.setPage} />
       </div>
 
       {editing && (
@@ -1893,15 +2065,15 @@ function ContactsPage({ createRequest = 0 }) {
           <form className="mt-4 grid gap-4 md:grid-cols-2" onSubmit={save}>
             <label className="block text-sm font-medium text-slate-700">
               Nombre
-              <input className="mt-1 w-full rounded-lg border p-3" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+              <input className="mt-1 w-full rounded-lg border p-3" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Telefono
-              <input className="mt-1 w-full rounded-lg border p-3" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <input className="mt-1 w-full rounded-lg border p-3" type="tel" placeholder="+56912345678" pattern="^\+?[0-9 ]{8,15}$" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Email
-              <input className="mt-1 w-full rounded-lg border p-3" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <input className="mt-1 w-full rounded-lg border p-3" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </label>
             <label className="block text-sm font-medium text-slate-700">
               Comuna
@@ -1928,7 +2100,7 @@ function ContactsPage({ createRequest = 0 }) {
         </div>
       )}
 
-      {loadingDetail && <div className="mt-6 text-sm text-slate-500">Cargando detalle del cliente...</div>}
+      {loadingDetail && <div className="mt-6 flex items-center gap-2 text-sm text-slate-500"><LoaderCircle className="animate-spin" size={18} />Cargando detalle del cliente...</div>}
 
       {detail && (
         <div className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100">
@@ -2151,6 +2323,8 @@ function QuotesPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [workingId, setWorkingId] = useState(null);
   const [converting, setConverting] = useState(null);
@@ -2161,9 +2335,16 @@ function QuotesPage({ createRequest = 0 }) {
   const [editForm, setEditForm] = useState({ contactId: '', title: '', description: '', amount: '' });
 
   async function load() {
-    const [data, contactRows] = await Promise.all([api('/quotes'), api('/contacts')]);
-    setRows(data);
-    setContacts(contactRows);
+    setLoading(true);
+    try {
+      const [data, contactRows] = await Promise.all([api('/quotes'), api('/contacts')]);
+      setRows(data);
+      setContacts(contactRows);
+    } catch (err) {
+      setMessage(errorMessage(err, 'No se pudieron cargar las cotizaciones.'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -2172,7 +2353,7 @@ function QuotesPage({ createRequest = 0 }) {
   useEffect(() => {
     if (createRequest > 0) setCreating(true);
   }, [createRequest]);
-  const visibleRows = filterDemoRows(rows, demoFilter);
+  const quoteList = usePagedRows(rows, demoFilter, search, (row) => [row.title, row.description, row.status, row.contact?.fullName, row.contact?.phone, row.lead?.title].filter(Boolean).join(' '));
 
   async function createQuote(e) {
     e.preventDefault();
@@ -2188,7 +2369,7 @@ function QuotesPage({ createRequest = 0 }) {
       await load();
       setMessage('Cotizacion creada como borrador.');
     } catch (err) {
-      setMessage('No se pudo crear la cotizacion.');
+      setMessage(errorMessage(err, 'No se pudo crear la cotizacion.'));
       console.error(err);
     } finally {
       setWorkingId(null);
@@ -2219,7 +2400,7 @@ function QuotesPage({ createRequest = 0 }) {
       await load();
       setMessage('Cotizacion actualizada.');
     } catch (err) {
-      setMessage('No se pudo editar la cotizacion.');
+      setMessage(errorMessage(err, 'No se pudo editar la cotizacion.'));
       console.error(err);
     } finally {
       setWorkingId(null);
@@ -2327,12 +2508,12 @@ function QuotesPage({ createRequest = 0 }) {
           <p className="mt-1 text-slate-500">Propuestas enviadas o preparadas desde WhatsApp Assistant y Leads.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <DemoFilter value={demoFilter} onChange={setDemoFilter} />
           <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Nueva cotizacion</button>
         </div>
       </div>
 
-      {message && <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      <FeedbackMessage message={message} />
+      <ListToolbar search={search} setSearch={setSearch} demoFilter={demoFilter} setDemoFilter={setDemoFilter} totalRows={quoteList.totalRows} placeholder="Buscar por cliente, telefono o servicio..." />
 
       {creating && (
         <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={createQuote}>
@@ -2361,8 +2542,8 @@ function QuotesPage({ createRequest = 0 }) {
         </form>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
-        <table className="w-full text-left text-sm">
+      <div className="mt-6 overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        <table className="w-full min-w-[1000px] text-left text-sm">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="p-4">Cliente</th>
@@ -2376,7 +2557,7 @@ function QuotesPage({ createRequest = 0 }) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row) => (
+            {loading ? <LoadingRows columns={8} label="Cargando cotizaciones..." /> : quoteList.visibleRows.map((row) => (
               <tr key={row.id} className="border-t align-top">
                 <td className="p-4">{row.contact?.fullName || '-'}</td>
                 <td className="p-4"><DemoBadge row={row} /></td>
@@ -2427,9 +2608,10 @@ function QuotesPage({ createRequest = 0 }) {
                 </td>
               </tr>
             ))}
-            {visibleRows.length === 0 && <tr><td className="p-6 text-slate-500" colSpan={8}>Sin cotizaciones.</td></tr>}
+            {!loading && quoteList.totalRows === 0 && <tr><td className="p-8 text-center text-slate-500" colSpan={8}>{search ? 'No encontramos cotizaciones con esa busqueda.' : 'Aun no tienes cotizaciones.'}</td></tr>}
           </tbody>
         </table>
+        <Pagination page={quoteList.page} totalPages={quoteList.totalPages} setPage={quoteList.setPage} />
       </div>
 
       {editing && (
