@@ -105,12 +105,35 @@ export class QuotePdfService {
 
   private render(snapshot: any): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A4', margin: 54, info: { Title: `Cotizacion ${snapshot.quote.title}` } });
+      const doc = new PDFDocument({
+        size: 'A4',
+        margin: 0,
+        info: {
+          Title: `Cotizacion ${snapshot.quote.title}`,
+          Author: snapshot.professional.displayName || 'Fluxio Light',
+          Subject: `Cotizacion para ${snapshot.contact.fullName || 'cliente'}`
+        }
+      });
       const chunks: Buffer[] = [];
       doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
+      const pageWidth = 595.28;
+      const pageHeight = 841.89;
+      const margin = 48;
+      const contentWidth = pageWidth - margin * 2;
+      const colors = {
+        ink: '#17211d',
+        body: '#42504a',
+        muted: '#718079',
+        line: '#dce5e0',
+        soft: '#f3f7f5',
+        accent: '#11875d',
+        accentDark: '#075c40',
+        accentSoft: '#e7f5ef',
+        white: '#ffffff'
+      };
       const currency = snapshot.professional.currency || 'CLP';
       const amount = new Intl.NumberFormat('es-CL', {
         style: 'currency',
@@ -118,61 +141,196 @@ export class QuotePdfService {
         maximumFractionDigits: 0
       }).format(snapshot.quote.amount || 0);
 
-      doc.fillColor('#0f172a').fontSize(24).font('Helvetica-Bold').text('COTIZACION');
-      doc.moveDown(0.25);
-      doc.fillColor('#64748b').fontSize(10).font('Helvetica')
-        .text(`Version ${snapshot.version}  |  Emitida ${this.date(snapshot.generatedAt)}  |  Valida hasta ${this.date(snapshot.validUntil)}`);
-      doc.moveDown(1.5);
+      doc.rect(0, 0, pageWidth, 9).fill(colors.accent);
 
-      doc.fillColor('#059669').fontSize(15).font('Helvetica-Bold').text(snapshot.professional.displayName || 'Profesional');
-      doc.fillColor('#334155').fontSize(10).font('Helvetica');
-      [
+      doc.roundedRect(margin, 36, 34, 34, 6).fill(colors.accent);
+      doc.fillColor(colors.white).font('Helvetica-Bold').fontSize(14).text('FL', margin, 47, {
+        width: 34,
+        align: 'center'
+      });
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(13).text('FLUXIO LIGHT', 92, 42);
+      doc.fillColor(colors.muted).font('Helvetica').fontSize(8.5).text('GESTION PROFESIONAL', 92, 58);
+
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(24).text('COTIZACION', 344, 38, {
+        width: 203,
+        align: 'right'
+      });
+      doc.fillColor(colors.muted).font('Helvetica').fontSize(8.5).text(
+        `N. ${this.quoteNumber(snapshot.quoteId, snapshot.version)}`,
+        344,
+        64,
+        { width: 203, align: 'right' }
+      );
+
+      doc.moveTo(margin, 91).lineTo(pageWidth - margin, 91).lineWidth(1).stroke(colors.line);
+
+      const professionalY = 116;
+      doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(8).text('EMITIDO POR', margin, professionalY);
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(13).text(
+        snapshot.professional.displayName || 'Profesional',
+        margin,
+        professionalY + 17,
+        { width: 270 }
+      );
+      doc.fillColor(colors.body).font('Helvetica').fontSize(9.5);
+      const professionalLines = [
         snapshot.professional.profession,
         snapshot.professional.phone,
         snapshot.professional.email
-      ].filter(Boolean).forEach((line) => doc.text(line));
+      ].filter(Boolean);
+      professionalLines.forEach((line, index) => {
+        doc.text(line, margin, professionalY + 39 + index * 15, { width: 270 });
+      });
 
-      doc.moveDown(1.5);
-      doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold').text('CLIENTE');
-      doc.moveDown(0.35);
-      doc.fillColor('#334155').fontSize(10).font('Helvetica');
-      [
+      doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(8).text('FECHAS', 365, professionalY);
+      this.metaRow(doc, 'Emision', this.date(snapshot.generatedAt), 365, professionalY + 18, 182, colors);
+      this.metaRow(doc, 'Valida hasta', this.date(snapshot.validUntil), 365, professionalY + 39, 182, colors);
+      this.metaRow(doc, 'Vigencia', `${snapshot.quote.validityDays} dias`, 365, professionalY + 60, 182, colors);
+
+      const clientY = 219;
+      doc.roundedRect(margin, clientY, contentWidth, 82, 6).fill(colors.soft);
+      doc.fillColor(colors.accent).font('Helvetica-Bold').fontSize(8).text('PREPARADA PARA', margin + 18, clientY + 15);
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(13).text(
         snapshot.contact.fullName || 'Cliente por confirmar',
+        margin + 18,
+        clientY + 34,
+        { width: 245 }
+      );
+      const clientDetail = [
         snapshot.contact.phone,
-        snapshot.contact.email,
-        [snapshot.contact.address, snapshot.contact.commune].filter(Boolean).join(', ')
-      ].filter(Boolean).forEach((line) => doc.text(line));
-
-      doc.moveDown(1.5);
-      doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold').text('SERVICIO');
-      doc.moveDown(0.5);
-      doc.fillColor('#0f172a').fontSize(14).font('Helvetica-Bold').text(snapshot.quote.title || 'Servicio');
-      if (snapshot.quote.description) {
-        doc.moveDown(0.4);
-        doc.fillColor('#475569').fontSize(10).font('Helvetica').text(snapshot.quote.description, { lineGap: 3 });
+        snapshot.contact.email
+      ].filter(Boolean).join('  |  ');
+      if (clientDetail) {
+        doc.fillColor(colors.body).font('Helvetica').fontSize(9).text(clientDetail, margin + 18, clientY + 55, {
+          width: 245
+        });
+      }
+      const address = [snapshot.contact.address, snapshot.contact.commune].filter(Boolean).join(', ');
+      if (address) {
+        doc.fillColor(colors.muted).font('Helvetica').fontSize(9).text(address, 336, clientY + 35, {
+          width: 193,
+          align: 'right'
+        });
       }
 
-      doc.moveDown(1.5);
-      const y = doc.y;
-      doc.roundedRect(54, y, 487, 66, 6).fill('#ecfdf5');
-      doc.fillColor('#047857').fontSize(10).font('Helvetica-Bold').text('VALOR TOTAL', 72, y + 14);
-      doc.fillColor('#064e3b').fontSize(22).font('Helvetica-Bold').text(amount, 72, y + 31);
-      doc.y = y + 82;
+      const tableY = 329;
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(12).text('Detalle de la propuesta', margin, tableY);
+      doc.roundedRect(margin, tableY + 25, contentWidth, 32, 4).fill(colors.accentDark);
+      doc.fillColor(colors.white).font('Helvetica-Bold').fontSize(8.5);
+      doc.text('SERVICIO', margin + 15, tableY + 37, { width: 330 });
+      doc.text('VALOR', 399, tableY + 37, { width: 130, align: 'right' });
 
-      doc.fillColor('#0f172a').fontSize(11).font('Helvetica-Bold').text('CONDICIONES');
-      doc.moveDown(0.4);
-      doc.fillColor('#475569').fontSize(10).font('Helvetica')
-        .text(`Vigencia: ${snapshot.quote.validityDays} dias.`)
-        .text(`Forma de pago: ${snapshot.quote.paymentTerms || 'A convenir.'}`);
+      const description = snapshot.quote.description || 'Servicio profesional segun coordinacion con el cliente.';
+      const descriptionHeight = Math.max(70, doc.heightOfString(description, {
+        width: 325,
+        lineGap: 3
+      }) + 55);
+      const rowHeight = Math.min(descriptionHeight, 124);
+      const rowY = tableY + 57;
+      doc.rect(margin, rowY, contentWidth, rowHeight).fill(colors.white).stroke(colors.line);
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(11).text(
+        snapshot.quote.title || 'Servicio profesional',
+        margin + 15,
+        rowY + 14,
+        { width: 325 }
+      );
+      doc.fillColor(colors.body).font('Helvetica').fontSize(9.3).text(
+        description,
+        margin + 15,
+        rowY + 34,
+        { width: 325, height: rowHeight - 42, lineGap: 3, ellipsis: true }
+      );
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(13).text(
+        amount,
+        399,
+        rowY + 17,
+        { width: 130, align: 'right' }
+      );
+
+      const totalY = rowY + rowHeight + 18;
+      doc.roundedRect(331, totalY, 216, 61, 6).fill(colors.accentSoft);
+      doc.fillColor(colors.accentDark).font('Helvetica-Bold').fontSize(8.5).text('TOTAL COTIZADO', 349, totalY + 12);
+      doc.fillColor(colors.accentDark).font('Helvetica-Bold').fontSize(21).text(amount, 349, totalY + 29, {
+        width: 180,
+        align: 'right'
+      });
+
+      const conditionsY = totalY + 88;
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(11).text('Condiciones comerciales', margin, conditionsY);
+      doc.moveTo(margin, conditionsY + 21).lineTo(pageWidth - margin, conditionsY + 21).stroke(colors.line);
+      this.conditionRow(
+        doc,
+        'Forma de pago',
+        snapshot.quote.paymentTerms || 'A convenir con el profesional',
+        margin,
+        conditionsY + 36,
+        contentWidth,
+        colors
+      );
+      this.conditionRow(
+        doc,
+        'Vigencia',
+        `${snapshot.quote.validityDays} dias desde la fecha de emision`,
+        margin,
+        conditionsY + 62,
+        contentWidth,
+        colors
+      );
+
       if (snapshot.quote.observations) {
-        doc.moveDown(0.5).text(`Observaciones: ${snapshot.quote.observations}`, { lineGap: 3 });
+        doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(8).text('OBSERVACIONES', margin, conditionsY + 96);
+        doc.fillColor(colors.body).font('Helvetica').fontSize(9.2).text(
+          snapshot.quote.observations,
+          margin,
+          conditionsY + 111,
+          { width: contentWidth, height: 52, lineGap: 3, ellipsis: true }
+        );
       }
 
-      doc.moveDown(2);
-      doc.fillColor('#94a3b8').fontSize(9).font('Helvetica')
-        .text('Documento generado por Fluxio Light. Confirma disponibilidad y coordinacion antes de realizar el servicio.', { align: 'center' });
+      doc.roundedRect(margin, pageHeight - 128, contentWidth, 50, 6).fill(colors.soft);
+      doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(9.5).text(
+        'Para aceptar esta cotizacion, responde al mensaje de WhatsApp o contacta directamente al profesional.',
+        margin + 16,
+        pageHeight - 111,
+        { width: contentWidth - 32, align: 'center' }
+      );
+
+      doc.moveTo(margin, pageHeight - 52).lineTo(pageWidth - margin, pageHeight - 52).stroke(colors.line);
+      doc.fillColor(colors.muted).font('Helvetica').fontSize(7.8).text(
+        `Generado por Fluxio Light  |  ${this.date(snapshot.generatedAt)}  |  Documento v${snapshot.version}`,
+        margin,
+        pageHeight - 37,
+        { width: contentWidth, align: 'center' }
+      );
       doc.end();
     });
+  }
+
+  private metaRow(doc: PDFKit.PDFDocument, label: string, value: string, x: number, y: number, width: number, colors: any) {
+    doc.fillColor(colors.muted).font('Helvetica').fontSize(8.5).text(label, x, y, { width: 76 });
+    doc.fillColor(colors.ink).font('Helvetica-Bold').fontSize(8.5).text(value, x + 76, y, {
+      width: width - 76,
+      align: 'right'
+    });
+  }
+
+  private conditionRow(
+    doc: PDFKit.PDFDocument,
+    label: string,
+    value: string,
+    x: number,
+    y: number,
+    width: number,
+    colors: any
+  ) {
+    doc.fillColor(colors.muted).font('Helvetica-Bold').fontSize(8.5).text(label.toUpperCase(), x, y, { width: 115 });
+    doc.fillColor(colors.body).font('Helvetica').fontSize(9.5).text(value, x + 125, y - 1, {
+      width: width - 125
+    });
+  }
+
+  private quoteNumber(quoteId: string, version: number) {
+    return `${String(quoteId || '').replace(/-/g, '').slice(0, 8).toUpperCase()}-${String(version).padStart(2, '0')}`;
   }
 
   private date(value: string) {
