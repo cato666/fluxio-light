@@ -6,6 +6,7 @@ import { CreateQuoteDto } from './dto/create-quote.dto';
 import { UpdateQuoteStatusDto } from './dto/update-quote-status.dto';
 import { QuotesService } from './quotes.service';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
+import { SendQuoteDocumentDto } from './dto/send-quote-document.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('quotes')
@@ -30,6 +31,21 @@ export class QuotesController {
   @Post(':id/send')
   send(@CurrentUser() user: any, @Param('id') id: string) {
     return this.service.send(user.professionalId, id);
+  }
+
+  @Post(':id/document')
+  generateDocument(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.service.generateDocument(user.professionalId, id);
+  }
+
+  @Get(':id/documents')
+  listDocuments(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.service.listDocuments(user.professionalId, id);
+  }
+
+  @Post(':id/send-document')
+  sendDocument(@CurrentUser() user: any, @Param('id') id: string, @Body() dto: SendQuoteDocumentDto) {
+    return this.service.sendDocument(user.professionalId, id, dto.recipient);
   }
 
   @Patch(':id')

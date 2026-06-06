@@ -6,23 +6,30 @@ import { MessageTemplatesService } from '../message-templates/message-templates.
 import { CreateAttendanceFromQuoteDto } from './dto/create-attendance-from-quote.dto';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { UpdateQuoteDto } from './dto/update-quote.dto';
+import { QuoteDocumentRecipient } from './dto/send-quote-document.dto';
+import { QuotePdfService } from './quote-pdf.service';
 
 @Injectable()
 export class QuotesService {
-  constructor(private prisma: PrismaService, private kapso: KapsoService, private templates: MessageTemplatesService) {}
+  constructor(
+    private prisma: PrismaService,
+    private kapso: KapsoService,
+    private templates: MessageTemplatesService,
+    private quotePdf: QuotePdfService
+  ) {}
 
   list(professionalId: string) {
     return this.prisma.quote.findMany({
       where: { professionalId },
       orderBy: { createdAt: 'desc' },
-      include: { contact: true, lead: true, attendance: true }
+      include: { contact: true, lead: true, attendance: true, documents: { orderBy: { version: 'desc' }, take: 1 } }
     });
   }
 
   get(professionalId: string, id: string) {
     return this.prisma.quote.findFirst({
       where: { id, professionalId },
-      include: { contact: true, lead: true, attendance: { include: { incomeRecord: true } } }
+      include: { contact: true, lead: true, documents: { orderBy: { version: 'desc' } }, attendance: { include: { incomeRecord: true } } }
     });
   }
 
@@ -58,6 +65,9 @@ export class QuotesService {
         title: dto.title,
         description: dto.description,
         amount: dto.amount,
+        validityDays: dto.validityDays,
+        paymentTerms: dto.paymentTerms,
+        observations: dto.observations,
         status: 'DRAFT',
         message: await this.buildQuoteMessage(professionalId, dto.title, dto.description, dto.amount, contact?.fullName)
       },
@@ -159,6 +169,112 @@ export class QuotesService {
       quote: updated,
       messageId: sendResult.messageId,
       conversationId: conversation.id
+    };
+  }
+
+  generateDocument(professionalId: string, id: string) {
+    return this.quotePdf.generate(professionalId, id);
+  }
+
+  listDocuments(professionalId: string, id: string) {
+    return this.quotePdf.list(professionalId, id);
+  }
+
+  async sendDocument(
+    professionalId: string,
+    id: string,
+    recipient: QuoteDocumentRecipient,
+    options?: { recipientPhone?: string; phoneNumberId?: string }
+  ) {
+    const quote = await this.prisma.quote.findFirst({
+      where: { id, professionalId },
+      include: { contact: true, professional: true, lead: true }
+    });
+    if (!quote) throw new NotFoundException('Quote not found.');
+
+    const connection = options?.phoneNumberId
+      ? await this.prisma.whatsAppConnection.findFirst({ where: { professionalId, phoneNumberId: options.phoneNumberId } })
+      : await this.prisma.whatsAppConnection.findFirst({
+        where: {
+          professionalId,
+          phoneNumberId: { not: null },
+          status: { in: ['connected', 'CONNECTED'] }
+        },
+        orderBy: [{ connectionType: 'desc' }, { updatedAt: 'desc' }]
+      });
+    if (!connection?.phoneNumberId) throw new BadRequestException('No connected WhatsApp connection is available.');
+
+    const professionalPhone = options?.recipientPhone
+      || (quote.professional.assistantAllowedPhones || '').split(/[\s,;]+/).find(Boolean)
+      || quote.professional.phone;
+    const to = recipient === QuoteDocumentRecipient.CLIENT ? quote.contact?.phone : professionalPhone;
+    if (!to) {
+      throw new BadRequestException(
+        recipient === QuoteDocumentRecipient.CLIENT
+          ? 'Quote contact phone is required before sending.'
+          : 'Professional authorized phone is required before sending.'
+      );
+    }
+
+    const document = await this.quotePdf.latestOrGenerate(professionalId, id, quote.updatedAt);
+    if (!document.publicUrl) throw new BadRequestException('Quote document does not have a public URL.');
+
+    const targetName = recipient === QuoteDocumentRecipient.CLIENT
+      ? quote.contact?.fullName
+      : quote.professional.displayName;
+    const conversation = await this.upsertConversation(professionalId, connection.id, to, targetName);
+    const caption = recipient === QuoteDocumentRecipient.CLIENT
+      ? `Cotizacion de ${quote.professional.displayName}: ${quote.title}`
+      : `Tu cotizacion para ${quote.contact?.fullName || 'el cliente'} esta lista para reenviar.`;
+    const source = recipient === QuoteDocumentRecipient.CLIENT ? 'quote_pdf_client' : 'quote_pdf_professional';
+
+    const result = await this.kapso.sendTrackedDocumentMessage({
+      professionalId,
+      conversationId: conversation.id,
+      phoneNumberId: connection.phoneNumberId,
+      fromPhone: connection.displayPhone || connection.phoneNumberId,
+      to,
+      link: document.publicUrl,
+      fileName: document.fileName,
+      caption,
+      source,
+      metadata: {
+        quoteId: quote.id,
+        quoteDocumentId: document.id,
+        recipient
+      }
+    });
+
+    const now = new Date();
+    await this.prisma.quoteDocument.update({
+      where: { id: document.id },
+      data: recipient === QuoteDocumentRecipient.CLIENT
+        ? { sentToClientAt: now }
+        : { sentToProfessionalAt: now }
+    });
+
+    let updatedQuote = quote;
+    if (recipient === QuoteDocumentRecipient.CLIENT) {
+      updatedQuote = await this.prisma.quote.update({
+        where: { id: quote.id },
+        data: { status: 'SENT', sentAt: now }
+      }) as any;
+      if (quote.leadId) {
+        await this.prisma.lead.update({
+          where: { id: quote.leadId },
+          data: { status: 'CONTACTED', title: quote.title, estimatedValue: quote.amount || undefined }
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      recipient,
+      to,
+      simulated: Boolean(result.simulated),
+      messageId: result.messageId,
+      document: await this.prisma.quoteDocument.findUnique({ where: { id: document.id } }),
+      quote: updatedQuote
     };
   }
 

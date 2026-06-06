@@ -46,6 +46,9 @@ GET/POST /quotes
 PATCH/DELETE /quotes/:id
 PATCH /quotes/:id/status
 POST /quotes/:id/create-attendance
+POST /quotes/:id/document
+GET /quotes/:id/documents
+POST /quotes/:id/send-document
 
 GET/POST /attendances
 PATCH/DELETE /attendances/:id
@@ -55,4 +58,16 @@ GET/POST /income
 GET/POST /expenses
 GET/POST /evidence
 POST /evidence/upload
+```
+
+`POST /quotes/:id/send-document` recibe:
+
+```json
+{ "recipient": "CLIENT" }
+```
+
+o:
+
+```json
+{ "recipient": "PROFESSIONAL" }
 ```

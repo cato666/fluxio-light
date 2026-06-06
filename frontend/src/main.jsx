@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertCircle, Calendar, Camera, CheckCircle, ChevronLeft, ChevronRight, Clipboard, DollarSign, FileText, Home, LoaderCircle, LogOut, MessageCircle, MoreHorizontal, Plus, Search, Send, Settings, ShieldCheck, TrendingUp, Users, WalletCards, X } from 'lucide-react';
+import { Activity, AlertCircle, Calendar, Camera, CheckCircle, ChevronLeft, ChevronRight, Clipboard, DollarSign, Download, FileText, Home, LoaderCircle, LogOut, MessageCircle, MoreHorizontal, Plus, Search, Send, Settings, ShieldCheck, Smartphone, TrendingUp, Users, WalletCards, X } from 'lucide-react';
 import './styles/index.css';
 
 const API_URL = window.__FLUXIO_CONFIG__?.VITE_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -2330,9 +2330,10 @@ function QuotesPage({ createRequest = 0 }) {
   const [converting, setConverting] = useState(null);
   const [convertForm, setConvertForm] = useState({});
   const [creating, setCreating] = useState(false);
-  const [createForm, setCreateForm] = useState({ contactId: '', title: '', description: '', amount: '' });
+  const [createForm, setCreateForm] = useState({ contactId: '', title: '', description: '', amount: '', validityDays: 7, paymentTerms: '', observations: '' });
   const [editing, setEditing] = useState(null);
-  const [editForm, setEditForm] = useState({ contactId: '', title: '', description: '', amount: '' });
+  const [editForm, setEditForm] = useState({ contactId: '', title: '', description: '', amount: '', validityDays: 7, paymentTerms: '', observations: '' });
+  const [documentQuote, setDocumentQuote] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -2362,9 +2363,9 @@ function QuotesPage({ createRequest = 0 }) {
     try {
       await api('/quotes', {
         method: 'POST',
-        body: JSON.stringify({ ...createForm, amount: Number(createForm.amount || 0) })
+        body: JSON.stringify({ ...createForm, amount: Number(createForm.amount || 0), validityDays: Number(createForm.validityDays || 7) })
       });
-      setCreateForm({ contactId: '', title: '', description: '', amount: '' });
+      setCreateForm({ contactId: '', title: '', description: '', amount: '', validityDays: 7, paymentTerms: '', observations: '' });
       setCreating(false);
       await load();
       setMessage('Cotizacion creada como borrador.');
@@ -2382,7 +2383,10 @@ function QuotesPage({ createRequest = 0 }) {
       contactId: row.contactId || '',
       title: row.title || '',
       description: row.description || '',
-      amount: row.amount ?? ''
+      amount: row.amount ?? '',
+      validityDays: row.validityDays || 7,
+      paymentTerms: row.paymentTerms || '',
+      observations: row.observations || ''
     });
   }
 
@@ -2394,7 +2398,7 @@ function QuotesPage({ createRequest = 0 }) {
     try {
       await api(`/quotes/${editing.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ ...editForm, amount: Number(editForm.amount || 0) })
+        body: JSON.stringify({ ...editForm, amount: Number(editForm.amount || 0), validityDays: Number(editForm.validityDays || 7) })
       });
       setEditing(null);
       await load();
@@ -2439,6 +2443,46 @@ function QuotesPage({ createRequest = 0 }) {
     } catch (err) {
       setMessage('No se pudo enviar la cotizacion. Revisa telefono y conexion WhatsApp.');
       console.error(err);
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  async function generateQuotePdf(row) {
+    setWorkingId(row.id);
+    setMessage('');
+    const preview = window.open('', '_blank');
+    try {
+      const document = await api(`/quotes/${row.id}/document`, { method: 'POST', body: JSON.stringify({}) });
+      if (preview) preview.location = document.publicUrl;
+      else window.open(document.publicUrl, '_blank');
+      await load();
+      setDocumentQuote((current) => current?.id === row.id ? { ...current, documents: [document] } : current);
+      setMessage(`PDF generado: ${document.fileName}`);
+    } catch (err) {
+      if (preview) preview.close();
+      setMessage(errorMessage(err, 'No se pudo generar el PDF.'));
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  async function sendQuoteDocument(row, recipient) {
+    setWorkingId(row.id);
+    setMessage('');
+    try {
+      const result = await api(`/quotes/${row.id}/send-document`, {
+        method: 'POST',
+        body: JSON.stringify({ recipient })
+      });
+      await load();
+      setMessage(
+        recipient === 'CLIENT'
+          ? `PDF enviado al cliente${result.simulated ? ' (simulado).' : '.'}`
+          : `PDF enviado a tu WhatsApp${result.simulated ? ' (simulado).' : '.'}`
+      );
+    } catch (err) {
+      setMessage(errorMessage(err, 'No se pudo enviar el PDF por WhatsApp.'));
     } finally {
       setWorkingId(null);
     }
@@ -2534,8 +2578,20 @@ function QuotesPage({ createRequest = 0 }) {
             <label className="text-sm font-medium text-slate-700">Monto
               <input type="number" min="0" className="mt-1 w-full rounded-lg border p-3" value={createForm.amount} onChange={(e) => setCreateForm({ ...createForm, amount: e.target.value })} required />
             </label>
+            <label className="text-sm font-medium text-slate-700">Vigencia
+              <div className="mt-1 flex items-center gap-2">
+                <input type="number" min="1" max="90" className="w-full rounded-lg border p-3" value={createForm.validityDays} onChange={(e) => setCreateForm({ ...createForm, validityDays: e.target.value })} />
+                <span className="text-sm text-slate-500">dias</span>
+              </div>
+            </label>
+            <label className="text-sm font-medium text-slate-700">Condiciones de pago
+              <input className="mt-1 w-full rounded-lg border p-3" value={createForm.paymentTerms} onChange={(e) => setCreateForm({ ...createForm, paymentTerms: e.target.value })} placeholder="Ej: transferencia al confirmar" />
+            </label>
             <label className="text-sm font-medium text-slate-700 md:col-span-2">Detalle
               <textarea className="mt-1 min-h-24 w-full rounded-lg border p-3" value={createForm.description} onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })} />
+            </label>
+            <label className="text-sm font-medium text-slate-700 md:col-span-2">Observaciones
+              <textarea className="mt-1 min-h-20 w-full rounded-lg border p-3" value={createForm.observations} onChange={(e) => setCreateForm({ ...createForm, observations: e.target.value })} placeholder="Indicaciones, exclusiones o notas para el cliente" />
             </label>
           </div>
           <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={workingId === 'create'}>{workingId === 'create' ? 'Creando...' : 'Crear cotizacion'}</button>
@@ -2573,6 +2629,9 @@ function QuotesPage({ createRequest = 0 }) {
                   <div className="flex flex-wrap gap-2">
                     <button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 disabled:text-slate-400" onClick={() => startEdit(row)} disabled={row.status === 'CONVERTED'}>
                       Editar
+                    </button>
+                    <button className="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700" onClick={() => setDocumentQuote(row)}>
+                      PDF
                     </button>
                     <button
                       className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -2614,6 +2673,36 @@ function QuotesPage({ createRequest = 0 }) {
         <Pagination page={quoteList.page} totalPages={quoteList.totalPages} setPage={quoteList.setPage} />
       </div>
 
+      {documentQuote && (
+        <section className="mt-6 border-y border-slate-200 bg-white px-5 py-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <FileText size={20} className="text-emerald-600" />
+                <h2 className="font-semibold text-slate-900">Documento de cotizacion</h2>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                {documentQuote.contact?.fullName || 'Cliente'} - {documentQuote.title}
+                {documentQuote.documents?.[0] ? ` - version ${documentQuote.documents[0].version}` : ' - aun sin PDF'}
+              </p>
+            </div>
+            <button type="button" title="Cerrar panel PDF" className="self-start rounded-lg p-2 text-slate-500 hover:bg-slate-100" onClick={() => setDocumentQuote(null)}><X size={18} /></button>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" disabled={workingId === documentQuote.id} onClick={() => generateQuotePdf(documentQuote)}>
+              <Download size={17} /> Generar y descargar
+            </button>
+            <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={workingId === documentQuote.id || !documentQuote.contact?.phone} onClick={() => sendQuoteDocument(documentQuote, 'CLIENT')}>
+              <Send size={17} /> Enviar PDF al cliente
+            </button>
+            <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={workingId === documentQuote.id} onClick={() => sendQuoteDocument(documentQuote, 'PROFESSIONAL')}>
+              <Smartphone size={17} /> Enviar a mi WhatsApp
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">El envio al profesional usa su telefono autorizado. El PDF queda disponible para reenviarlo manualmente al cliente.</p>
+        </section>
+      )}
+
       {editing && (
         <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={saveQuote}>
           <div className="flex items-center justify-between gap-4"><h2 className="text-lg font-semibold">Editar cotizacion</h2><button type="button" className="text-sm font-semibold text-slate-500" onClick={() => setEditing(null)}>Cancelar</button></div>
@@ -2621,7 +2710,10 @@ function QuotesPage({ createRequest = 0 }) {
             <label className="text-sm font-medium">Cliente<select className="mt-1 w-full rounded-lg border p-3" value={editForm.contactId} onChange={(e) => setEditForm({ ...editForm, contactId: e.target.value })} required>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.fullName || contact.phone}</option>)}</select></label>
             <label className="text-sm font-medium">Servicio<input className="mt-1 w-full rounded-lg border p-3" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} required /></label>
             <label className="text-sm font-medium">Monto<input type="number" min="0" className="mt-1 w-full rounded-lg border p-3" value={editForm.amount} onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })} required /></label>
+            <label className="text-sm font-medium">Vigencia en dias<input type="number" min="1" max="90" className="mt-1 w-full rounded-lg border p-3" value={editForm.validityDays} onChange={(e) => setEditForm({ ...editForm, validityDays: e.target.value })} /></label>
+            <label className="text-sm font-medium">Condiciones de pago<input className="mt-1 w-full rounded-lg border p-3" value={editForm.paymentTerms} onChange={(e) => setEditForm({ ...editForm, paymentTerms: e.target.value })} /></label>
             <label className="text-sm font-medium md:col-span-2">Detalle<textarea className="mt-1 min-h-24 w-full rounded-lg border p-3" value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} /></label>
+            <label className="text-sm font-medium md:col-span-2">Observaciones<textarea className="mt-1 min-h-20 w-full rounded-lg border p-3" value={editForm.observations} onChange={(e) => setEditForm({ ...editForm, observations: e.target.value })} /></label>
           </div>
           <button className="mt-4 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={workingId === editing.id}>{workingId === editing.id ? 'Guardando...' : 'Guardar cambios'}</button>
         </form>

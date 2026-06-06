@@ -38,6 +38,10 @@
 - Una cotizacion en borrador, fallida o cancelada se puede eliminar.
 - Una cotizacion enviada o convertida conserva trazabilidad y debe cancelarse en lugar de eliminarse.
 - Una cotizacion convertida no se puede editar.
+- Los PDF se guardan como `QuoteDocument` versionados e inmutables.
+- Enviar el PDF al profesional no cambia la cotizacion a `SENT`.
+- Enviar el PDF al cliente cambia la cotizacion a `SENT` y registra el mensaje outbound.
+- El destino `PROFESSIONAL` usa el telefono autorizado o el telefono que envio el comando privado.
 
 ## Gastos
 

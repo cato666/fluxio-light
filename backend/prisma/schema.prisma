@@ -142,6 +142,7 @@ model Professional {
   contacts    Contact[]
   leads       Lead[]
   quotes      Quote[]
+  quoteDocuments QuoteDocument[]
   appointments Appointment[]
   attendances Attendance[]
   incomeRecords IncomeRecord[]
@@ -234,16 +235,42 @@ model Quote {
   amount         Int          @default(0)
   status         QuoteStatus  @default(DRAFT)
   message        String?
+  validityDays   Int          @default(7)
+  paymentTerms   String?
+  observations  String?
   sentAt         DateTime?
   acceptedAt     DateTime?
   rejectedAt     DateTime?
   convertedAt    DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+  documents      QuoteDocument[]
 
   @@index([professionalId, status])
   @@index([professionalId, contactId])
   @@index([professionalId, leadId])
+}
+
+model QuoteDocument {
+  id                   String       @id @default(uuid())
+  professionalId       String
+  professional         Professional @relation(fields: [professionalId], references: [id])
+  quoteId              String
+  quote                Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  version              Int
+  fileName             String
+  mimeType             String       @default("application/pdf")
+  storageProvider      String
+  storageKey           String
+  publicUrl            String?
+  snapshot             Json
+  generatedAt          DateTime     @default(now())
+  sentToClientAt       DateTime?
+  sentToProfessionalAt DateTime?
+  createdAt            DateTime     @default(now())
+
+  @@unique([quoteId, version])
+  @@index([professionalId, quoteId])
 }
 
 model Appointment {

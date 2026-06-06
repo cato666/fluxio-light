@@ -49,3 +49,12 @@ Scope: local pilot readiness review before first external version.
 - Set `FRONTEND_URL`, `APP_URL`, `PUBLIC_STORAGE_BASE_URL` and `VITE_API_URL` to production URLs.
 - Keep current Nest 10 npm audit findings as known moderate risk until a planned Nest 11 upgrade is tested.
 - Do not run the seed against production data; it recreates demo data for `admin@fluxiolight.local`.
+
+## Quote PDF review
+
+Date: 2026-06-06
+
+- Added `pdfkit` and reran `npm audit --omit=dev`: no new PDF-related findings were introduced.
+- The remaining result is 4 moderate vulnerabilities in Nest 10 transitive dependencies. The automatic fix still requires Nest 11 and remains deferred.
+- Kapso document delivery requires a remotely accessible `PUBLIC_STORAGE_BASE_URL`.
+- Local storage uses random UUID file paths, but URLs are not authenticated. Before storing sensitive or clinical information in production PDFs, migrate documents to private object storage with short-lived signed URLs and retention rules.

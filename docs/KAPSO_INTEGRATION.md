@@ -209,6 +209,34 @@ Si la plantilla `quote` esta inactiva, Fluxio usa el texto por defecto del backe
 
 Desde la interfaz web, la vista `Cotizaciones` permite revisar las cotizaciones, reenviar borradores, marcar `ACCEPTED` o `REJECTED` y convertir una cotizacion aceptada en `Attendance` con `IncomeRecord` asociado. Las atenciones directas siguen permitidas aunque no exista cotizacion previa.
 
+### Documentos PDF salientes
+
+Fluxio usa el endpoint de mensajes de Kapso/WhatsApp con `type: document` y un enlace publico:
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "recipient_type": "individual",
+  "to": "+569...",
+  "type": "document",
+  "document": {
+    "link": "https://api.fluxio.cl/uploads/cotizacion.pdf",
+    "filename": "cotizacion-cliente-v1.pdf",
+    "caption": "Cotizacion lista"
+  }
+}
+```
+
+La vista `Cotizaciones` permite enviar el PDF al cliente o devolverlo al WhatsApp autorizado del profesional. Ambos envios quedan en `WhatsAppMessage` como `type=document`; el documento generado queda en `QuoteDocument`.
+
+Comando privado para devolver el PDF al profesional:
+
+```txt
+Cotizar PDF para mi: Ana Perez, curacion a domicilio, $25000
+```
+
+`PUBLIC_STORAGE_BASE_URL` debe ser accesible desde Internet para que Kapso descargue el archivo. En local, sin API key real, el envio queda como `SIMULATED`.
+
 Cuando un mensaje entrante normal viene desde el telefono del cliente, Fluxio revisa si existe una cotizacion reciente en `SENT` o `PENDING_CONFIRMATION` para ese contacto. Si detecta aceptacion (`acepto`, `confirmo`, `de acuerdo`, `dale`, `me sirve`) actualiza la `Quote` a `ACCEPTED`. Si detecta rechazo (`no gracias`, `no acepto`, `no me sirve`, `muy caro`, `por ahora no`) actualiza la `Quote` a `REJECTED`.
 
 ## Cobros por WhatsApp Assistant

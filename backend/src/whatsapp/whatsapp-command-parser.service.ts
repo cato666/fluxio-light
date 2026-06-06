@@ -10,6 +10,7 @@ export type ParsedCommand =
   | { type: 'UPDATE_CONTACT_PHONE'; name?: string; phone?: string }
   | { type: 'CREATE_APPOINTMENT'; name?: string; startsAtText?: string; title?: string; location?: string }
   | { type: 'QUOTE'; name?: string; service?: string; amount?: number }
+  | { type: 'QUOTE_PDF_SELF'; name?: string; service?: string; amount?: number }
   | { type: 'QUOTE_QUERY'; status?: 'pending' | 'accepted' | 'rejected' | 'all'; name?: string }
   | { type: 'CONVERT_QUOTE'; name?: string }
   | { type: 'PAYMENT_QUERY'; name?: string }
@@ -109,6 +110,14 @@ export class WhatsappCommandParserService {
         title: parts[2],
         location: parts[3]
       };
+    }
+
+    if (lower.startsWith('cotizar pdf para mi')) {
+      const payload = raw.split(':').slice(1).join(':').trim();
+      const parts = payload.split(',').map((p) => p.trim());
+      const amountText = parts.find((p) => /\$?\d/.test(p));
+      const amount = amountText ? Number(amountText.replace(/[^\d]/g, '')) : undefined;
+      return { type: 'QUOTE_PDF_SELF', name: parts[0], service: parts[1], amount };
     }
 
     if (lower.startsWith('cotizar')) {

@@ -328,6 +328,7 @@ Ejemplos:
 ```txt
 Registrar atencion: Ana Perez, inyeccion, $30000, transferencia
 Cotizar: Ana Perez, inyeccion a domicilio, $30000
+Cotizar PDF para mi: Ana Perez, inyeccion a domicilio, $30000
 Pendientes de cobro
 Pago recibido: Ana Perez, $25000, transferencia
 Cobrar a Ana Perez
@@ -341,6 +342,20 @@ En este modo el numero del profesional no se crea como cliente. Si Fluxio encuen
 En onboarding, esto se muestra como `Numero Fluxio` y `WhatsApp de trabajo para comandos`. El profesional no necesita ver `sandbox`, `production` ni `webhook URL`; esos datos quedan para soporte.
 
 Las cotizaciones quedan guardadas como entidad propia. Una atencion puede existir sin cotizacion previa; cuando una cotizacion se acepta, se puede convertir en atencion desde la vista `Cotizaciones`, creando tambien el ingreso asociado.
+
+Cada cotizacion puede generar un PDF versionado con datos del profesional, cliente, servicio, monto, vigencia, condiciones de pago y observaciones. Desde la web existen tres acciones:
+
+- generar y descargar el PDF;
+- enviarlo directamente al telefono del cliente;
+- enviarlo al WhatsApp autorizado del profesional para que lo revise y reenvie manualmente.
+
+Desde Fluxio Assistant, el profesional puede pedir el documento en el mismo chat privado:
+
+```txt
+Cotizar PDF para mi: Ana Perez, inyeccion a domicilio, $30000
+```
+
+Este comando nunca envia el documento al cliente. Crea la cotizacion y devuelve el PDF al telefono que envio el comando.
 
 Si el cliente responde a una cotizacion con mensajes como `acepto`, `confirmo`, `de acuerdo`, `dale` o `me sirve`, Fluxio la marca como aceptada. Si responde `no gracias`, `no acepto`, `no me sirve`, `muy caro` o `por ahora no`, la marca como rechazada.
 
@@ -406,13 +421,21 @@ READ
 
 Campos principales:
 
-- `outboundSource`: flujo que origino el envio, por ejemplo `manual_reply`, `quote`, `assistant_quote` o `assistant_payment_reminder`;
+- `outboundSource`: flujo que origino el envio, por ejemplo `manual_reply`, `quote`, `assistant_quote`, `quote_pdf_client`, `quote_pdf_professional` o `assistant_payment_reminder`;
 - `outboundStatus`: estado operacional del envio;
 - `outboundError`: error devuelto por Kapso si el envio falla;
 - `kapsoMessageId`: id devuelto por Kapso cuando existe;
 - `sentAt`, `deliveredAt`, `readAt`, `failedAt`.
 
 Los estados `DELIVERED` y `READ` se actualizan desde webhooks outbound/status de Kapso cuando el payload incluye el `kapsoMessageId`.
+
+Para documentos salientes, `PUBLIC_STORAGE_BASE_URL` debe apuntar a la URL publica del backend, por ejemplo:
+
+```txt
+PUBLIC_STORAGE_BASE_URL=https://api.fluxio.cl/uploads
+```
+
+Kapso debe poder descargar esa URL. `http://localhost:3000/uploads` solo sirve para desarrollo local o envios simulados.
 
 Visibilidad:
 

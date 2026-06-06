@@ -43,6 +43,7 @@
 - [x] Dashboard.
 - [x] Leads con edicion, cotizacion y crear atencion.
 - [x] Cotizaciones con estados y conversion a atencion.
+- [x] Cotizaciones PDF versionadas con descarga y envio a cliente/profesional.
 - [x] Contactos con creacion y edicion web.
 - [x] Detalle 360 del cliente con leads, cotizaciones, atenciones, finanzas, evidencias y WhatsApp.
 - [x] Agenda.
@@ -64,6 +65,7 @@
 - [x] Probar evento `whatsapp.message.received`.
 - [x] Probar envio de respuesta simulada.
 - [x] Probar recepcion de imagen/documento.
+- [x] Implementar documento outbound con trazabilidad.
 
 ## Fase 4 - Hardening
 

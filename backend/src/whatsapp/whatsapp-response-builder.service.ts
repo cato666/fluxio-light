@@ -9,6 +9,7 @@ export class WhatsappResponseBuilderService {
       'Puedes escribirme comandos privados como:',
       'Registrar atencion: Ana Perez, curacion, $25000, transferencia',
       'Cotizar: Ana Perez, curacion a domicilio, $25000',
+      'Cotizar PDF para mi: Ana Perez, curacion a domicilio, $25000',
       'Cotizaciones pendientes',
       'Cotizaciones de Ana Perez',
       'Crear atencion desde cotizacion de Ana Perez',
@@ -149,6 +150,10 @@ export class WhatsappResponseBuilderService {
 
   quoteSent(contactName?: string | null) {
     return `Cotizacion enviada${contactName ? ` a ${contactName}` : ''}.`;
+  }
+
+  quotePdfSentToProfessional(contactName?: string | null, simulated?: boolean) {
+    return `PDF preparado${contactName ? ` para ${contactName}` : ''} y enviado a este chat${simulated ? ' (simulado)' : ''}. Puedes reenviarlo desde tu WhatsApp.`;
   }
 
   quoteSendFailed(contactName?: string | null) {

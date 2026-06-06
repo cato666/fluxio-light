@@ -7,6 +7,8 @@ import { MessageTemplatesService } from '../message-templates/message-templates.
 import { ParsedCommand, WhatsappCommandParserService } from './whatsapp-command-parser.service';
 import { WhatsappMediaService } from './whatsapp-media.service';
 import { WhatsappResponseBuilderService } from './whatsapp-response-builder.service';
+import { QuotesService } from '../quotes/quotes.service';
+import { QuoteDocumentRecipient } from '../quotes/dto/send-quote-document.dto';
 
 @Injectable()
 export class WhatsappRouterService {
@@ -21,7 +23,8 @@ export class WhatsappRouterService {
     private evidence: EvidenceService,
     private media: WhatsappMediaService,
     private kapsoConfig: KapsoConfigService,
-    private templates: MessageTemplatesService
+    private templates: MessageTemplatesService,
+    private quotes: QuotesService
   ) {}
 
   async handleKapsoEvent(event: any, _headers: any) {
@@ -318,6 +321,15 @@ export class WhatsappRouterService {
       }
     }
 
+    if (command.type === 'QUOTE_PDF_SELF') {
+      const resolved = await this.resolveCommandContact(professionalId, fromPhone, command, command.name, text);
+      if (resolved.reply) {
+        await this.replyIfPossible(phoneNumberId, fromPhone, resolved.reply);
+        return { professionalId, command: command.type, needsClarification: true };
+      }
+      reply = await this.executeContactCommand(professionalId, resolved.contact!.id, command, text, fromPhone, phoneNumberId);
+    }
+
     if (command.type === 'QUOTE_QUERY') {
       if (command.name) {
         const resolved = await this.resolveCommandContact(professionalId, fromPhone, command, command.name, text);
@@ -475,6 +487,15 @@ export class WhatsappRouterService {
         });
         reply = this.responses.quoteConfirmation(contact.fullName, command.service, command.amount);
       }
+    }
+
+    if (command.type === 'QUOTE_PDF_SELF') {
+      const resolved = await this.resolveCommandContact(professionalId, fromPhone, command, command.name, text);
+      if (resolved.reply) {
+        await this.replyIfPossible(phoneNumberId, fromPhone, resolved.reply);
+        return { professionalId, command: command.type, needsClarification: true };
+      }
+      reply = await this.executeContactCommand(professionalId, resolved.contact!.id, command, text, fromPhone, phoneNumberId);
     }
 
     if (command.type === 'QUOTE_QUERY') {
@@ -714,6 +735,24 @@ export class WhatsappRouterService {
       return this.responses.quoteConfirmation(contact.fullName, command.service, command.amount);
     }
 
+    if (command.type === 'QUOTE_PDF_SELF') {
+      if (!phoneNumberId || !fromPhone) return 'No hay conexion WhatsApp disponible para enviarte el PDF.';
+      const quote = await this.quotes.createForAssistant(
+        professionalId,
+        contact.id,
+        command.service,
+        command.amount,
+        'DRAFT'
+      );
+      const result = await this.quotes.sendDocument(
+        professionalId,
+        quote.id,
+        QuoteDocumentRecipient.PROFESSIONAL,
+        { recipientPhone: fromPhone, phoneNumberId }
+      );
+      return this.responses.quotePdfSentToProfessional(contact.fullName, Boolean(result.simulated));
+    }
+
     if (command.type === 'PAYMENT_RECEIVED') {
       return this.registerPaymentReceived(professionalId, contact.id, command.amount, command.paymentMethod);
     }
@@ -943,6 +982,7 @@ export class WhatsappRouterService {
     if (command.type === 'UPDATE_CONTACT_PHONE') return 'actualizar el telefono';
     if (command.type === 'CREATE_APPOINTMENT') return 'agendar la cita';
     if (command.type === 'QUOTE') return 'preparar la cotizacion';
+    if (command.type === 'QUOTE_PDF_SELF') return 'preparar el PDF de la cotizacion';
     if (command.type === 'QUOTE_QUERY') return 'consultar cotizaciones';
     if (command.type === 'CONVERT_QUOTE') return 'convertir la cotizacion en atencion';
     if (command.type === 'PAYMENT_QUERY') return 'consultar cobros pendientes';
@@ -963,6 +1003,7 @@ export class WhatsappRouterService {
       'cita agendada',
       'cotizacion lista',
       'cotizacion enviada',
+      'pdf preparado',
       'cotizaciones pendientes:',
       'cotizaciones aceptadas:',
       'cotizaciones rechazadas:',

@@ -9,9 +9,10 @@ import { KapsoModule } from '../kapso/kapso.module';
 import { EvidenceModule } from '../evidence/evidence.module';
 import { StorageModule } from '../storage/storage.module';
 import { MessageTemplatesModule } from '../message-templates/message-templates.module';
+import { QuotesModule } from '../quotes/quotes.module';
 
 @Module({
-  imports: [forwardRef(() => KapsoModule), EvidenceModule, StorageModule, MessageTemplatesModule],
+  imports: [forwardRef(() => KapsoModule), forwardRef(() => QuotesModule), EvidenceModule, StorageModule, MessageTemplatesModule],
   controllers: [WhatsappController],
   providers: [WhatsappService, WhatsappRouterService, WhatsappCommandParserService, WhatsappMediaService, WhatsappResponseBuilderService],
   exports: [WhatsappRouterService, WhatsappService]

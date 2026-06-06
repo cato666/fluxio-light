@@ -15,6 +15,19 @@ export interface TrackedTextMessageInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface TrackedDocumentMessageInput {
+  professionalId: string;
+  phoneNumberId: string;
+  to: string;
+  link: string;
+  fileName: string;
+  caption?: string;
+  conversationId?: string | null;
+  fromPhone?: string | null;
+  source: string;
+  metadata?: Record<string, unknown>;
+}
+
 @Injectable()
 export class KapsoService {
   private readonly logger = new Logger(KapsoService.name);
@@ -287,6 +300,109 @@ export class KapsoService {
           failedAt: new Date(),
           payload: {
             source: input.source,
+            ...(input.metadata || {}),
+            error: message
+          }
+        }
+      });
+      throw error;
+    }
+  }
+
+  async sendDocumentMessage(phoneNumberId: string, to: string, link: string, fileName: string, caption?: string) {
+    const kapso = this.kapsoConfig.get();
+    if (!kapso.isApiConfigured || !kapso.apiKey) {
+      this.logger.warn(`KAPSO_API_KEY no configurada. Documento simulado para ${to}: ${fileName}`);
+      return { simulated: true, to, link, fileName, caption };
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), kapso.requestTimeoutMs);
+    try {
+      const res = await fetch(`${kapso.apiBaseUrl}/meta/whatsapp/v24.0/${phoneNumberId}/messages`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': kapso.apiKey
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to,
+          type: 'document',
+          document: {
+            link,
+            filename: fileName,
+            ...(caption ? { caption } : {})
+          }
+        })
+      });
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`Kapso sendDocumentMessage failed: ${res.status} ${error}`);
+      }
+      return res.json();
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error(`Kapso sendDocumentMessage timeout after ${kapso.requestTimeoutMs}ms.`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async sendTrackedDocumentMessage(input: TrackedDocumentMessageInput) {
+    const savedMessage = await this.prisma.whatsAppMessage.create({
+      data: {
+        professionalId: input.professionalId,
+        conversationId: input.conversationId || undefined,
+        direction: 'OUTBOUND',
+        outboundStatus: 'SENDING',
+        outboundSource: input.source,
+        fromPhone: input.fromPhone || input.phoneNumberId,
+        toPhone: input.to,
+        type: 'document',
+        text: input.caption,
+        payload: {
+          source: input.source,
+          document: { link: input.link, fileName: input.fileName },
+          ...(input.metadata || {})
+        }
+      }
+    });
+
+    try {
+      const result = await this.sendDocumentMessage(input.phoneNumberId, input.to, input.link, input.fileName, input.caption);
+      const kapsoMessageId = this.extractKapsoMessageId(result);
+      const simulated = Boolean((result as any)?.simulated);
+      const updated = await this.prisma.whatsAppMessage.update({
+        where: { id: savedMessage.id },
+        data: {
+          kapsoMessageId,
+          outboundStatus: simulated ? 'SIMULATED' : 'SENT',
+          sentAt: new Date(),
+          payload: {
+            source: input.source,
+            document: { link: input.link, fileName: input.fileName },
+            ...(input.metadata || {}),
+            kapso: result
+          }
+        }
+      });
+      return { ok: true, simulated, kapsoMessageId, messageId: updated.id, message: updated, kapso: result };
+    } catch (error: any) {
+      const message = error?.message || 'Kapso outbound document failed.';
+      await this.prisma.whatsAppMessage.update({
+        where: { id: savedMessage.id },
+        data: {
+          outboundStatus: 'FAILED',
+          outboundError: message,
+          failedAt: new Date(),
+          payload: {
+            source: input.source,
+            document: { link: input.link, fileName: input.fileName },
             ...(input.metadata || {}),
             error: message
           }

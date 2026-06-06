@@ -120,6 +120,14 @@ Al responder `si`, Fluxio envia la cotizacion al telefono del cliente, registra 
 
 Al responder `no` o `cancelar`, la cotizacion queda como `CANCELLED`.
 
+Para crear el PDF y recibirlo en el mismo WhatsApp del profesional, sin enviarlo al cliente:
+
+```txt
+Cotizar PDF para mi: Juan Soto, inyeccion a domicilio, $30000
+```
+
+Fluxio crea la cotizacion, genera un `QuoteDocument` y envia el archivo al telefono autorizado que escribio el comando. El profesional puede revisarlo y reenviarlo manualmente.
+
 Si el cliente no tiene telefono, Fluxio responde que primero se debe completar:
 
 ```txt

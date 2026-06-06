@@ -12,6 +12,7 @@ Entidades principales:
 - Expense: gasto general o asociado a contacto, lead o atencion.
 - Campaign: campana o fuente de captacion.
 - WhatsAppConnection: numero conectado via Kapso.
+- QuoteDocument: version inmutable del PDF generado para una cotizacion, con snapshot y trazabilidad de envio.
 - WhatsAppConversation: conversacion.
 - WhatsAppMessage: mensaje.
 - EvidenceFile: archivo o evidencia.
