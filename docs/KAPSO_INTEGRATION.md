@@ -237,6 +237,16 @@ Cotizar PDF para mi: Ana Perez, curacion a domicilio, $25000
 
 `PUBLIC_STORAGE_BASE_URL` debe ser accesible desde Internet para que Kapso descargue el archivo. En local, sin API key real, el envio queda como `SIMULATED`.
 
+Para EasyPanel:
+
+```txt
+APP_URL=https://<dominio-publico-backend>
+LOCAL_STORAGE_PATH=/app/uploads
+PUBLIC_STORAGE_BASE_URL=https://<dominio-publico-backend>/uploads
+```
+
+El servicio backend debe tener un volumen persistente con destino `/app/uploads`. La base de datos solo conserva metadatos y la clave del archivo; no conserva el contenido binario del PDF.
+
 Cuando un mensaje entrante normal viene desde el telefono del cliente, Fluxio revisa si existe una cotizacion reciente en `SENT` o `PENDING_CONFIRMATION` para ese contacto. Si detecta aceptacion (`acepto`, `confirmo`, `de acuerdo`, `dale`, `me sirve`) actualiza la `Quote` a `ACCEPTED`. Si detecta rechazo (`no gracias`, `no acepto`, `no me sirve`, `muy caro`, `por ahora no`) actualiza la `Quote` a `REJECTED`.
 
 ## Cobros por WhatsApp Assistant

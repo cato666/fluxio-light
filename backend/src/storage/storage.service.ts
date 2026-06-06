@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import { mkdirSync, writeFileSync } from 'fs';
-import { extname, join } from 'path';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { extname, isAbsolute, join, resolve } from 'path';
 
 @Injectable()
 export class StorageService {
@@ -16,19 +16,38 @@ export class StorageService {
   }
 
   saveRawBuffer(buffer: Buffer, options: { originalFileName?: string; mimeType?: string }) {
-    const root = this.config.get<string>('LOCAL_STORAGE_PATH') || './uploads';
+    const root = this.getRootPath();
     mkdirSync(root, { recursive: true });
     const extension = extname(options.originalFileName || '') || this.extensionFromMime(options.mimeType);
     const key = `${randomUUID()}${extension}`;
     const fullPath = join(root, key);
     writeFileSync(fullPath, buffer);
 
-    const publicBase = this.config.get<string>('PUBLIC_STORAGE_BASE_URL') || 'http://localhost:3000/uploads';
     return {
       storageProvider: 'local',
       storageKey: key,
-      publicUrl: `${publicBase}/${key}`
+      publicUrl: this.getPublicUrl(key)
     };
+  }
+
+  getRootPath() {
+    const configured = this.config.get<string>('LOCAL_STORAGE_PATH') || './uploads';
+    return isAbsolute(configured) ? configured : resolve(process.cwd(), configured);
+  }
+
+  getPublicUrl(storageKey: string) {
+    const configuredBase = this.normalizeBase(this.config.get<string>('PUBLIC_STORAGE_BASE_URL'));
+    const appUrl = this.normalizeBase(this.config.get<string>('APP_URL'));
+    const publicBase = configuredBase || (appUrl ? `${appUrl}/uploads` : 'http://localhost:3000/uploads');
+    return `${publicBase}/${storageKey}`;
+  }
+
+  hasFile(storageKey: string) {
+    return existsSync(join(this.getRootPath(), storageKey));
+  }
+
+  private normalizeBase(value?: string) {
+    return String(value || '').trim().replace(/\/+$/, '');
   }
 
   private extensionFromMime(mime?: string) {

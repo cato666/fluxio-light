@@ -71,11 +71,12 @@ export class QuotePdfService {
     });
   }
 
-  list(professionalId: string, quoteId: string) {
-    return this.prisma.quoteDocument.findMany({
+  async list(professionalId: string, quoteId: string) {
+    const documents = await this.prisma.quoteDocument.findMany({
       where: { professionalId, quoteId },
       orderBy: { version: 'desc' }
     });
+    return Promise.all(documents.map((document) => this.refreshPublicUrl(document)));
   }
 
   async latestOrGenerate(professionalId: string, quoteId: string, quoteUpdatedAt?: Date) {
@@ -83,8 +84,23 @@ export class QuotePdfService {
       where: { professionalId, quoteId },
       orderBy: { version: 'desc' }
     });
-    if (latest && (!quoteUpdatedAt || latest.generatedAt >= quoteUpdatedAt)) return latest;
+    if (
+      latest
+      && this.storage.hasFile(latest.storageKey)
+      && (!quoteUpdatedAt || latest.generatedAt >= quoteUpdatedAt)
+    ) {
+      return this.refreshPublicUrl(latest);
+    }
     return this.generate(professionalId, quoteId);
+  }
+
+  private async refreshPublicUrl<T extends { id: string; storageKey: string; publicUrl: string | null }>(document: T) {
+    const publicUrl = this.storage.getPublicUrl(document.storageKey);
+    if (document.publicUrl === publicUrl) return document;
+    return this.prisma.quoteDocument.update({
+      where: { id: document.id },
+      data: { publicUrl }
+    });
   }
 
   private render(snapshot: any): Promise<Buffer> {

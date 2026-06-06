@@ -437,6 +437,22 @@ PUBLIC_STORAGE_BASE_URL=https://api.fluxio.cl/uploads
 
 Kapso debe poder descargar esa URL. `http://localhost:3000/uploads` solo sirve para desarrollo local o envios simulados.
 
+En EasyPanel, para el backend configura:
+
+```txt
+APP_URL=https://laboratorio-api-fluxio.sgnetm.easypanel.host
+LOCAL_STORAGE_PATH=/app/uploads
+PUBLIC_STORAGE_BASE_URL=https://laboratorio-api-fluxio.sgnetm.easypanel.host/uploads
+```
+
+Ademas, crea un volumen persistente montado en:
+
+```txt
+/app/uploads
+```
+
+Sin ese volumen, los PDF locales se pierden cuando EasyPanel reconstruye o reemplaza el contenedor. Despues de corregir estas variables, vuelve a generar el PDF desde `Cotizaciones > PDF > Generar y descargar`; los documentos nuevos ya guardaran la URL publica correcta.
+
 Visibilidad:
 
 - En `WhatsApp`, las burbujas salientes muestran el estado y el error si falla.
