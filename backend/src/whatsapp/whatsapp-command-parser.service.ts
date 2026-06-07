@@ -11,6 +11,9 @@ export type ParsedCommand =
   | { type: 'CREATE_APPOINTMENT'; name?: string; startsAtText?: string; title?: string; location?: string }
   | { type: 'QUOTE'; name?: string; service?: string; amount?: number }
   | { type: 'QUOTE_PDF_SELF'; name?: string; service?: string; amount?: number }
+  | { type: 'QUOTE_TEXT_DIRECT'; name?: string; service?: string; amount?: number }
+  | { type: 'QUOTE_PDF_CLIENT'; name?: string; service?: string; amount?: number }
+  | { type: 'QUOTE_DRAFT'; name?: string; service?: string; amount?: number }
   | { type: 'QUOTE_QUERY'; status?: 'pending' | 'accepted' | 'rejected' | 'all'; name?: string }
   | { type: 'CONVERT_QUOTE'; name?: string }
   | { type: 'PAYMENT_QUERY'; name?: string }

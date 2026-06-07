@@ -50,6 +50,18 @@ Profesional <-> numero Fluxio/Kapso
 Fluxio <-> Kapso API/webhooks
 ```
 
+### Menu conversacional
+
+El profesional puede escribir `menu` al numero Fluxio/Kapso. Fluxio guarda temporalmente el paso actual en `AssistantPendingAction` y guia estas operaciones:
+
+- registrar atencion e ingreso;
+- crear cotizacion y escoger su forma de entrega;
+- agendar servicio;
+- registrar gasto;
+- consultar agenda, cobros y resumen mensual.
+
+Cada flujo vence despues de diez minutos, acepta `cancelar` y solicita confirmacion antes de ejecutar. Los comandos completos siguen funcionando y reemplazan el flujo pendiente cuando el profesional decide usar un atajo.
+
 Cuando llega un `whatsapp.message.received`, Fluxio compara `message.from` con:
 
 - `KAPSO_ASSISTANT_ALLOWED_PHONES`

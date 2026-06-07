@@ -11,15 +11,23 @@ menu
 Respuesta:
 
 ```txt
-Hola, que quieres hacer?
-
 1. Registrar atencion
-2. Ver agenda de hoy
-3. Ver leads pendientes
-4. Ver ingresos del mes
-5. Registrar gasto
-6. Ver pendientes de cobro
+2. Crear cotizacion
+3. Agendar servicio
+4. Registrar gasto
+5. Mas opciones
 ```
+
+Cada flujo solicita un dato por mensaje y termina con:
+
+```txt
+1. Confirmar
+2. Cancelar
+```
+
+La cotizacion permite elegir entre texto al cliente, PDF al cliente, PDF al profesional o guardar un borrador. `Mas opciones` permite consultar agenda de hoy/manana, cobros pendientes y resumen mensual.
+
+Los comandos completos descritos abajo continúan disponibles como atajos.
 
 ## Registro de atencion por comando
 

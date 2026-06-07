@@ -56,6 +56,7 @@
 - [x] Eventos/Auditoria de webhooks Kapso y anti-loop.
 - [x] Vista Configuracion para profesional y plantillas.
 - [x] Vista Primeros pasos para guiar uso del numero Fluxio/Kapso.
+- [x] Menu numerico guiado para atenciones, cotizaciones, agenda y gastos.
 
 ## Fase 3 - Kapso
 

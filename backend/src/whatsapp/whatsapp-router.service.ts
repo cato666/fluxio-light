@@ -111,7 +111,7 @@ export class WhatsappRouterService {
       : null;
     const professionalId = assistantProfessional?.id || connection.professionalId;
 
-    if (msgType === 'text' && await this.isRecentEcho(professionalId, fromPhone, text)) {
+    if (msgType === 'text' && !assistantProfessional && await this.isRecentEcho(professionalId, fromPhone, text)) {
       return { processed: false, reason: 'recent_text_echo', fromPhone, text };
     }
 
@@ -221,7 +221,10 @@ export class WhatsappRouterService {
     const command = this.parser.parse(text);
     let reply = this.responses.unknown();
 
-    if (command.type === 'MENU') reply = this.responses.menu();
+    if (command.type === 'MENU') {
+      await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_MENU', {});
+      reply = this.responses.menu();
+    }
 
     if (command.type === 'NEW_LEAD') {
       const contact = await this.findOrCreateContact(professionalId, fromPhone, command.name, command.source);
@@ -410,7 +413,10 @@ export class WhatsappRouterService {
 
     let reply = this.responses.unknown();
 
-    if (command.type === 'MENU') reply = this.responses.menu();
+    if (command.type === 'MENU') {
+      await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_MENU', {});
+      reply = this.responses.menu();
+    }
 
     if (command.type === 'NEW_LEAD') {
       const resolved = await this.resolveCommandContact(professionalId, fromPhone, command, command.name, text);
@@ -580,6 +586,10 @@ export class WhatsappRouterService {
 
     const payload = pending.payload as any;
 
+    if (pending.type.startsWith('GUIDED_')) {
+      return this.handleGuidedAssistantAction(pending, professionalId, phoneNumberId, fromPhone, text);
+    }
+
     if (pending.type === 'RESOLVE_CONTACT') {
       const index = Number(answer);
       const candidate = Number.isInteger(index) ? payload.candidates?.[index - 1] : null;
@@ -643,6 +653,348 @@ export class WhatsappRouterService {
     const reply = this.responses.pendingCancelled();
     await this.replyIfPossible(phoneNumberId, fromPhone, reply);
     return { pendingAction: pending.type, cancelled: true, reason: 'unknown_pending_type' };
+  }
+
+  private async handleGuidedAssistantAction(
+    pending: any,
+    professionalId: string,
+    phoneNumberId?: string | null,
+    fromPhone?: string,
+    text?: string
+  ) {
+    const answer = this.normalizeText(text);
+    const payload = pending.payload as any;
+    let reply = '';
+
+    if (pending.type === 'GUIDED_MENU') {
+      if (answer === '1') {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_ATTENDANCE', { step: 'CLIENT' });
+        reply = this.responses.guidedAskClient('la atencion');
+      } else if (answer === '2') {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_QUOTE', { step: 'CLIENT' });
+        reply = this.responses.guidedAskClient('la cotizacion');
+      } else if (answer === '3') {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_APPOINTMENT', { step: 'CLIENT' });
+        reply = this.responses.guidedAskClient('el servicio agendado');
+      } else if (answer === '4') {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_EXPENSE', { step: 'DESCRIPTION' });
+        reply = 'Que gasto quieres registrar?\n\nEjemplo: insumos de farmacia';
+      } else if (answer === '5') {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_MORE_MENU', {});
+        reply = this.responses.moreMenu();
+      } else {
+        reply = this.responses.guidedInvalidOption(5);
+      }
+      await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+      return { pendingAction: pending.type, guided: true };
+    }
+
+    if (pending.type === 'GUIDED_MORE_MENU') {
+      if (answer === '1') {
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        reply = await this.buildAgendaReply(professionalId, 'today');
+      } else if (answer === '2') {
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        reply = await this.buildAgendaReply(professionalId, 'tomorrow');
+      } else if (answer === '3') {
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        reply = await this.buildPendingPaymentsReply(professionalId);
+      } else if (answer === '4') {
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        const summary = await this.buildMonthSummary(professionalId);
+        reply = `Este mes llevas:\nIngresos: $${summary.income.toLocaleString('es-CL')}\nGastos: $${summary.expenses.toLocaleString('es-CL')}\nUtilidad estimada: $${(summary.income - summary.expenses).toLocaleString('es-CL')}\nAtenciones: ${summary.attendances}`;
+      } else if (answer === '5') {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_MENU', {});
+        reply = this.responses.menu();
+      } else {
+        reply = this.responses.guidedInvalidOption(5);
+      }
+      await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+      return { pendingAction: pending.type, guided: true };
+    }
+
+    if (pending.type === 'GUIDED_ATTENDANCE') {
+      return this.handleGuidedAttendance(pending, professionalId, phoneNumberId, fromPhone, text);
+    }
+    if (pending.type === 'GUIDED_QUOTE') {
+      return this.handleGuidedQuote(pending, professionalId, phoneNumberId, fromPhone, text);
+    }
+    if (pending.type === 'GUIDED_APPOINTMENT') {
+      return this.handleGuidedAppointment(pending, professionalId, phoneNumberId, fromPhone, text);
+    }
+    if (pending.type === 'GUIDED_EXPENSE') {
+      return this.handleGuidedExpense(pending, professionalId, phoneNumberId, fromPhone, text);
+    }
+
+    await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+    reply = this.responses.pendingCancelled();
+    await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+    return { pendingAction: pending.type, cancelled: true };
+  }
+
+  private async handleGuidedAttendance(
+    pending: any,
+    professionalId: string,
+    phoneNumberId?: string | null,
+    fromPhone?: string,
+    text?: string
+  ) {
+    const payload = pending.payload as any;
+    const answer = (text || '').trim();
+    let reply = '';
+
+    if (payload.step === 'CLIENT') {
+      if (!answer) reply = this.responses.guidedAskClient('la atencion');
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_ATTENDANCE', { ...payload, step: 'SERVICE', client: answer });
+        reply = this.responses.guidedAskService('atencion realizaste');
+      }
+    } else if (payload.step === 'SERVICE') {
+      if (!answer) reply = this.responses.guidedAskService('atencion realizaste');
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_ATTENDANCE', { ...payload, step: 'AMOUNT', service: answer });
+        reply = this.responses.guidedAskAmount();
+      }
+    } else if (payload.step === 'AMOUNT') {
+      const amount = this.parseMoney(answer);
+      if (!amount) reply = this.responses.guidedAskAmount();
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_ATTENDANCE', { ...payload, step: 'PAYMENT', amount });
+        reply = this.responses.guidedAskPaymentMethod();
+      }
+    } else if (payload.step === 'PAYMENT') {
+      const methods: Record<string, string> = { '1': 'transferencia', '2': 'efectivo', '3': 'tarjeta', '4': 'otro' };
+      const paymentMethod = methods[this.normalizeText(answer)];
+      if (!paymentMethod) reply = this.responses.guidedInvalidOption(4);
+      else {
+        const next = { ...payload, step: 'CONFIRM', paymentMethod };
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_ATTENDANCE', next);
+        reply = this.responses.guidedConfirm('Confirma la atencion:', [
+          `Cliente: ${next.client}`,
+          `Servicio: ${next.service}`,
+          `Valor: $${Number(next.amount).toLocaleString('es-CL')}`,
+          `Pago: ${next.paymentMethod}`
+        ]);
+      }
+    } else if (payload.step === 'CONFIRM') {
+      if (this.normalizeText(answer) === '2') {
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        reply = this.responses.pendingCancelled();
+      } else if (this.normalizeText(answer) === '1') {
+        const command: ParsedCommand = {
+          type: 'REGISTER_ATTENDANCE',
+          name: payload.client,
+          title: payload.service,
+          amount: payload.amount,
+          paymentMethod: payload.paymentMethod
+        };
+        return this.completeGuidedContactCommand(pending, professionalId, phoneNumberId, fromPhone, command);
+      } else reply = this.responses.guidedInvalidOption(2);
+    }
+
+    await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+    return { pendingAction: pending.type, guided: true, step: payload.step };
+  }
+
+  private async handleGuidedQuote(
+    pending: any,
+    professionalId: string,
+    phoneNumberId?: string | null,
+    fromPhone?: string,
+    text?: string
+  ) {
+    const payload = pending.payload as any;
+    const answer = (text || '').trim();
+    let reply = '';
+
+    if (payload.step === 'CLIENT') {
+      if (!answer) reply = this.responses.guidedAskClient('la cotizacion');
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_QUOTE', { ...payload, step: 'SERVICE', client: answer });
+        reply = this.responses.guidedAskService('servicio quieres cotizar');
+      }
+    } else if (payload.step === 'SERVICE') {
+      if (!answer) reply = this.responses.guidedAskService('servicio quieres cotizar');
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_QUOTE', { ...payload, step: 'AMOUNT', service: answer });
+        reply = this.responses.guidedAskAmount();
+      }
+    } else if (payload.step === 'AMOUNT') {
+      const amount = this.parseMoney(answer);
+      if (!amount) reply = this.responses.guidedAskAmount();
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_QUOTE', { ...payload, step: 'DELIVERY', amount });
+        reply = this.responses.guidedQuoteDelivery();
+      }
+    } else if (payload.step === 'DELIVERY') {
+      const deliveries: Record<string, string> = {
+        '1': 'texto al cliente',
+        '2': 'PDF al cliente',
+        '3': 'PDF a mi WhatsApp',
+        '4': 'guardar borrador'
+      };
+      const delivery = deliveries[this.normalizeText(answer)];
+      if (!delivery) reply = this.responses.guidedInvalidOption(4);
+      else {
+        const next = { ...payload, step: 'CONFIRM', deliveryOption: answer, delivery };
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_QUOTE', next);
+        reply = this.responses.guidedConfirm('Confirma la cotizacion:', [
+          `Cliente: ${next.client}`,
+          `Servicio: ${next.service}`,
+          `Valor: $${Number(next.amount).toLocaleString('es-CL')}`,
+          `Entrega: ${next.delivery}`
+        ]);
+      }
+    } else if (payload.step === 'CONFIRM') {
+      if (this.normalizeText(answer) === '2') {
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        reply = this.responses.pendingCancelled();
+      } else if (this.normalizeText(answer) === '1') {
+        const types: Record<string, ParsedCommand['type']> = {
+          '1': 'QUOTE_TEXT_DIRECT',
+          '2': 'QUOTE_PDF_CLIENT',
+          '3': 'QUOTE_PDF_SELF',
+          '4': 'QUOTE_DRAFT'
+        };
+        const command = {
+          type: types[payload.deliveryOption],
+          name: payload.client,
+          service: payload.service,
+          amount: payload.amount
+        } as ParsedCommand;
+        return this.completeGuidedContactCommand(pending, professionalId, phoneNumberId, fromPhone, command);
+      } else reply = this.responses.guidedInvalidOption(2);
+    }
+
+    await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+    return { pendingAction: pending.type, guided: true, step: payload.step };
+  }
+
+  private async handleGuidedAppointment(
+    pending: any,
+    professionalId: string,
+    phoneNumberId?: string | null,
+    fromPhone?: string,
+    text?: string
+  ) {
+    const payload = pending.payload as any;
+    const answer = (text || '').trim();
+    let reply = '';
+
+    if (payload.step === 'CLIENT') {
+      if (!answer) reply = this.responses.guidedAskClient('el servicio agendado');
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_APPOINTMENT', { ...payload, step: 'DATE', client: answer });
+        reply = this.responses.guidedAskDate();
+      }
+    } else if (payload.step === 'DATE') {
+      if (!this.parseAppointmentDate(answer)) reply = this.responses.guidedAskDate();
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_APPOINTMENT', { ...payload, step: 'SERVICE', startsAtText: answer });
+        reply = this.responses.guidedAskService('servicio realizaras');
+      }
+    } else if (payload.step === 'SERVICE') {
+      if (!answer) reply = this.responses.guidedAskService('servicio realizaras');
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_APPOINTMENT', { ...payload, step: 'LOCATION', service: answer });
+        reply = this.responses.guidedAskLocation();
+      }
+    } else if (payload.step === 'LOCATION') {
+      const location = this.normalizeText(answer) === 'sin lugar' ? undefined : answer;
+      const next = { ...payload, step: 'CONFIRM', location };
+      await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_APPOINTMENT', next);
+      reply = this.responses.guidedConfirm('Confirma el servicio agendado:', [
+        `Cliente: ${next.client}`,
+        `Fecha: ${next.startsAtText}`,
+        `Servicio: ${next.service}`,
+        `Lugar: ${next.location || 'sin lugar'}`
+      ]);
+    } else if (payload.step === 'CONFIRM') {
+      if (this.normalizeText(answer) === '2') {
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        reply = this.responses.pendingCancelled();
+      } else if (this.normalizeText(answer) === '1') {
+        const command: ParsedCommand = {
+          type: 'CREATE_APPOINTMENT',
+          name: payload.client,
+          startsAtText: payload.startsAtText,
+          title: payload.service,
+          location: payload.location
+        };
+        return this.completeGuidedContactCommand(pending, professionalId, phoneNumberId, fromPhone, command);
+      } else reply = this.responses.guidedInvalidOption(2);
+    }
+
+    await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+    return { pendingAction: pending.type, guided: true, step: payload.step };
+  }
+
+  private async handleGuidedExpense(
+    pending: any,
+    professionalId: string,
+    phoneNumberId?: string | null,
+    fromPhone?: string,
+    text?: string
+  ) {
+    const payload = pending.payload as any;
+    const answer = (text || '').trim();
+    let reply = '';
+
+    if (payload.step === 'DESCRIPTION') {
+      if (!answer) reply = 'Que gasto quieres registrar?';
+      else {
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_EXPENSE', { ...payload, step: 'AMOUNT', description: answer });
+        reply = this.responses.guidedAskAmount();
+      }
+    } else if (payload.step === 'AMOUNT') {
+      const amount = this.parseMoney(answer);
+      if (!amount) reply = this.responses.guidedAskAmount();
+      else {
+        const next = { ...payload, step: 'CONFIRM', amount };
+        await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_EXPENSE', next);
+        reply = this.responses.guidedConfirm('Confirma el gasto:', [
+          `Detalle: ${next.description}`,
+          `Monto: $${Number(next.amount).toLocaleString('es-CL')}`
+        ]);
+      }
+    } else if (payload.step === 'CONFIRM') {
+      if (this.normalizeText(answer) === '2') {
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        reply = this.responses.pendingCancelled();
+      } else if (this.normalizeText(answer) === '1') {
+        await this.prisma.expense.create({
+          data: {
+            professionalId,
+            description: payload.description,
+            amount: payload.amount
+          }
+        });
+        await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+        reply = this.responses.expenseCreated(payload.amount);
+      } else reply = this.responses.guidedInvalidOption(2);
+    }
+
+    await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+    return { pendingAction: pending.type, guided: true, step: payload.step };
+  }
+
+  private async completeGuidedContactCommand(
+    pending: any,
+    professionalId: string,
+    phoneNumberId: string | null | undefined,
+    fromPhone: string | undefined,
+    command: ParsedCommand
+  ) {
+    await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
+    const resolved = await this.resolveCommandContact(professionalId, fromPhone, command, (command as any).name, '');
+    if (resolved.reply) {
+      await this.replyIfPossible(phoneNumberId, fromPhone, resolved.reply);
+      return { pendingAction: pending.type, guided: true, needsClarification: true };
+    }
+
+    const reply = await this.executeContactCommand(professionalId, resolved.contact!.id, command, '', fromPhone, phoneNumberId);
+    await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+    return { pendingAction: pending.type, guided: true, resolved: true, command: command.type };
   }
 
   private async executeContactCommand(professionalId: string, contactId: string, command: ParsedCommand, originalText?: string, fromPhone?: string, phoneNumberId?: string | null) {
@@ -735,6 +1087,36 @@ export class WhatsappRouterService {
       return this.responses.quoteConfirmation(contact.fullName, command.service, command.amount);
     }
 
+    if (command.type === 'QUOTE_TEXT_DIRECT') {
+      const result = await this.sendQuoteToContact(
+        professionalId,
+        phoneNumberId,
+        contact.id,
+        command.service,
+        command.amount
+      );
+      return result.reply;
+    }
+
+    if (command.type === 'QUOTE_PDF_CLIENT') {
+      if (!contact.phone) return this.responses.quoteNeedsPhone(contact.fullName);
+      if (!phoneNumberId) return 'No hay conexion WhatsApp disponible para enviar la cotizacion.';
+      const quote = await this.quotes.createForAssistant(
+        professionalId,
+        contact.id,
+        command.service,
+        command.amount,
+        'DRAFT'
+      );
+      const result = await this.quotes.sendDocument(
+        professionalId,
+        quote.id,
+        QuoteDocumentRecipient.CLIENT,
+        { phoneNumberId }
+      );
+      return this.responses.quoteSent(contact.fullName) + (result.simulated ? ' (simulado)' : '');
+    }
+
     if (command.type === 'QUOTE_PDF_SELF') {
       if (!phoneNumberId || !fromPhone) return 'No hay conexion WhatsApp disponible para enviarte el PDF.';
       const quote = await this.quotes.createForAssistant(
@@ -751,6 +1133,17 @@ export class WhatsappRouterService {
         { recipientPhone: fromPhone, phoneNumberId }
       );
       return this.responses.quotePdfSentToProfessional(contact.fullName, Boolean(result.simulated));
+    }
+
+    if (command.type === 'QUOTE_DRAFT') {
+      await this.quotes.createForAssistant(
+        professionalId,
+        contact.id,
+        command.service,
+        command.amount,
+        'DRAFT'
+      );
+      return `Cotizacion guardada como borrador para ${contact.fullName || 'el cliente'}.`;
     }
 
     if (command.type === 'PAYMENT_RECEIVED') {
@@ -982,7 +1375,10 @@ export class WhatsappRouterService {
     if (command.type === 'UPDATE_CONTACT_PHONE') return 'actualizar el telefono';
     if (command.type === 'CREATE_APPOINTMENT') return 'agendar la cita';
     if (command.type === 'QUOTE') return 'preparar la cotizacion';
+    if (command.type === 'QUOTE_TEXT_DIRECT') return 'enviar la cotizacion';
+    if (command.type === 'QUOTE_PDF_CLIENT') return 'enviar el PDF de la cotizacion';
     if (command.type === 'QUOTE_PDF_SELF') return 'preparar el PDF de la cotizacion';
+    if (command.type === 'QUOTE_DRAFT') return 'guardar la cotizacion';
     if (command.type === 'QUOTE_QUERY') return 'consultar cotizaciones';
     if (command.type === 'CONVERT_QUOTE') return 'convertir la cotizacion en atencion';
     if (command.type === 'PAYMENT_QUERY') return 'consultar cobros pendientes';
@@ -1023,7 +1419,25 @@ export class WhatsappRouterService {
       'listo cancele la accion pendiente',
       'no entendi completamente el mensaje',
       'este mes llevas',
-      'hola soy fluxio light'
+      'hola soy fluxio light',
+      'que necesitas hacer',
+      'mas opciones:',
+      'para quien es ',
+      'que atencion realizaste',
+      'que servicio quieres cotizar',
+      'que servicio realizaras',
+      'cual es el valor',
+      'como pago el cliente',
+      'cuando sera el servicio',
+      'donde sera',
+      'como quieres entregar la cotizacion',
+      'confirma la atencion',
+      'confirma la cotizacion',
+      'confirma el servicio agendado',
+      'confirma el gasto',
+      'que gasto quieres registrar',
+      'responde con un numero entre',
+      'cotizacion guardada como borrador'
     ];
 
     return prefixes.some((prefix) => normalized.startsWith(prefix));
@@ -1703,6 +2117,12 @@ export class WhatsappRouterService {
     if (m.includes('efectivo')) return 'CASH';
     if (m.includes('tarjeta')) return 'CARD';
     return 'OTHER';
+  }
+
+  private parseMoney(value?: string) {
+    const digits = String(value || '').replace(/[^\d]/g, '');
+    const amount = Number(digits);
+    return Number.isFinite(amount) && amount > 0 ? amount : null;
   }
 
   private async replyIfPossible(phoneNumberId?: string | null, to?: string, body?: string) {

@@ -11,6 +11,7 @@
     "test:webhook:kapso-media": "node scripts/test-kapso-media-webhook.js",
     "test:whatsapp:anti-loop": "node scripts/test-whatsapp-anti-loop.js",
     "test:whatsapp:assistant-flow": "node scripts/test-whatsapp-assistant-flow.js",
+    "test:whatsapp:guided-menu": "node scripts/test-whatsapp-guided-menu.js",
     "test:whatsapp:payments-flow": "node scripts/test-whatsapp-payments-flow.js",
     "admin:approve-user": "node scripts/approve-user.js",
     "admin:suspend-user": "node scripts/suspend-user.js",

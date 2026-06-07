@@ -4,25 +4,94 @@ import { Injectable } from '@nestjs/common';
 export class WhatsappResponseBuilderService {
   menu() {
     return [
-      'Hola, soy Fluxio Light.',
+      'Que necesitas hacer?',
       '',
-      'Puedes escribirme comandos privados como:',
-      'Registrar atencion: Ana Perez, curacion, $25000, transferencia',
-      'Cotizar: Ana Perez, curacion a domicilio, $25000',
-      'Cotizar PDF para mi: Ana Perez, curacion a domicilio, $25000',
-      'Cotizaciones pendientes',
-      'Cotizaciones de Ana Perez',
-      'Crear atencion desde cotizacion de Ana Perez',
-      'Pendientes de cobro',
-      'Pago recibido: Ana Perez, $25000, transferencia',
-      'Cobrar a Ana Perez',
-      'Agendar: Ana Perez, 2026-05-29 10:00, control presion, domicilio',
-      'Agenda hoy',
-      'Agregar telefono a Ana Perez: +56912345678',
-      'Nuevo lead: Carolina, cuidado adulto mayor, Instagram',
-      'Registrar gasto: insumos farmacia $8500',
-      'Resumen del mes'
+      '1. Registrar atencion',
+      '2. Crear cotizacion',
+      '3. Agendar servicio',
+      '4. Registrar gasto',
+      '5. Mas opciones',
+      '',
+      'Responde con un numero.',
+      'Puedes escribir "cancelar" en cualquier momento.'
     ].join('\n');
+  }
+
+  moreMenu() {
+    return [
+      'Mas opciones:',
+      '',
+      '1. Ver agenda de hoy',
+      '2. Ver agenda de manana',
+      '3. Ver cobros pendientes',
+      '4. Ver resumen del mes',
+      '5. Volver al menu principal',
+      '',
+      'Responde con un numero.'
+    ].join('\n');
+  }
+
+  guidedAskClient(action: string) {
+    return `Para quien es ${action}?\n\nEscribe el nombre o telefono del cliente.`;
+  }
+
+  guidedAskService(action: string) {
+    return `Que ${action}?\n\nEscribe una descripcion breve.`;
+  }
+
+  guidedAskAmount() {
+    return 'Cual es el valor?\n\nEscribe solo el monto, por ejemplo: 25000';
+  }
+
+  guidedAskPaymentMethod() {
+    return [
+      'Como pago el cliente?',
+      '',
+      '1. Transferencia',
+      '2. Efectivo',
+      '3. Tarjeta',
+      '4. Otro'
+    ].join('\n');
+  }
+
+  guidedAskDate() {
+    return [
+      'Cuando sera el servicio?',
+      '',
+      'Ejemplos:',
+      'manana 10:30',
+      '2026-06-10 15:00'
+    ].join('\n');
+  }
+
+  guidedAskLocation() {
+    return 'Donde sera?\n\nEscribe el lugar o responde "sin lugar".';
+  }
+
+  guidedQuoteDelivery() {
+    return [
+      'Como quieres entregar la cotizacion?',
+      '',
+      '1. Enviar texto al cliente',
+      '2. Enviar PDF al cliente',
+      '3. Enviarme el PDF',
+      '4. Guardar como borrador'
+    ].join('\n');
+  }
+
+  guidedConfirm(title: string, lines: Array<string | undefined>) {
+    return [
+      title,
+      '',
+      ...lines.filter(Boolean),
+      '',
+      '1. Confirmar',
+      '2. Cancelar'
+    ].join('\n');
+  }
+
+  guidedInvalidOption(max: number) {
+    return `Responde con un numero entre 1 y ${max}, o escribe "cancelar".`;
   }
 
   leadCreated(name?: string) {

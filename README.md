@@ -339,6 +339,22 @@ Resumen del mes
 
 En este modo el numero del profesional no se crea como cliente. Si Fluxio encuentra varios contactos con el mismo nombre, responde con una lista numerada para resolver la ambiguedad.
 
+### Menu guiado de WhatsApp
+
+El profesional puede escribir `menu` y responder solamente con numeros:
+
+```txt
+1. Registrar atencion
+2. Crear cotizacion
+3. Agendar servicio
+4. Registrar gasto
+5. Mas opciones
+```
+
+Cada opcion solicita un dato por mensaje y muestra una confirmacion antes de guardar o enviar. En cotizaciones se puede escoger texto al cliente, PDF al cliente, PDF al profesional o borrador. `cancelar` termina el flujo en cualquier paso.
+
+Los comandos completos anteriores siguen disponibles como atajos.
+
 En onboarding, esto se muestra como `Numero Fluxio` y `WhatsApp de trabajo para comandos`. El profesional no necesita ver `sandbox`, `production` ni `webhook URL`; esos datos quedan para soporte.
 
 Las cotizaciones quedan guardadas como entidad propia. Una atencion puede existir sin cotizacion previa; cuando una cotizacion se acepta, se puede convertir en atencion desde la vista `Cotizaciones`, creando tambien el ingreso asociado.
