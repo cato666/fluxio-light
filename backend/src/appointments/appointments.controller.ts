@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AppointmentsService } from './appointments.service';
@@ -38,6 +39,20 @@ export class AppointmentsController {
     @Body() dto: CreateAttendanceFromAppointmentDto
   ) {
     return this.service.createAttendance(user.professionalId, id, dto);
+  }
+
+  @Post(':id/send-reminder')
+  sendReminder(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.service.sendReminder(user.professionalId, id);
+  }
+
+  @Get(':id/calendar.ics')
+  @Header('Content-Type', 'text/calendar; charset=utf-8')
+  calendarFile(@CurrentUser() user: any, @Param('id') id: string, @Res() res: Response) {
+    return this.service.calendarFile(user.professionalId, id).then((file) => {
+      res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+      res.send(file.content);
+    });
   }
 
   @Delete(':id')

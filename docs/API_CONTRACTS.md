@@ -55,6 +55,8 @@ DELETE /leads/:id
 GET/POST /appointments
 PATCH/DELETE /appointments/:id
 POST /appointments/:id/create-attendance
+POST /appointments/:id/send-reminder
+GET /appointments/:id/calendar.ics
 
 GET/POST /quotes
 PATCH/DELETE /quotes/:id
@@ -85,3 +87,7 @@ o:
 ```json
 { "recipient": "PROFESSIONAL" }
 ```
+
+`POST /appointments/:id/send-reminder` envia al cliente la plantilla activa `appointment_reminder` por WhatsApp y registra trazabilidad saliente. Requiere cita `SCHEDULED`, cliente con telefono y conexion WhatsApp activa.
+
+`GET /appointments/:id/calendar.ics` descarga un archivo `text/calendar` compatible con Google Calendar, Apple Calendar y Outlook. Si la cita no tiene termino, Fluxio genera un bloque de una hora.

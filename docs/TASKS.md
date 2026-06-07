@@ -47,6 +47,7 @@
 - [x] Contactos con creacion y edicion web.
 - [x] Detalle 360 del cliente con leads, cotizaciones, atenciones, finanzas, evidencias y WhatsApp.
 - [x] Agenda.
+- [x] Agenda mejorada con filtros por rango, tarjetas por dia, recordatorio WhatsApp y descarga `.ics`.
 - [x] Atenciones.
 - [x] Ingresos editables.
 - [x] Gastos editables.

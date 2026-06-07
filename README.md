@@ -19,6 +19,7 @@ La interfaz del profesional prioriza la operacion diaria:
 - dashboard `Hoy` con agenda, conversaciones por responder, cotizaciones pendientes y cobros pendientes;
 - menu global `Nueva accion` para acceder rapidamente a clientes, agenda, atenciones, cotizaciones y WhatsApp;
 - ciclo operativo web completo: reprogramar o cancelar agenda, convertir una cita en atencion e ingreso, cerrar leads con motivo, editar o cancelar cotizaciones y actualizar atenciones/pagos;
+- agenda operativa con filtros Hoy/Manana/Semana/Todas, tarjetas por dia, recordatorios por WhatsApp y descarga `.ics` para agregar a calendario;
 - eliminacion protegida: cotizaciones enviadas y atenciones con gastos o evidencias conservan su trazabilidad y deben cancelarse en lugar de borrarse;
 - validacion UX transversal: errores legibles de API, timeout de red, bloqueo de doble envio, validacion de formularios, estados de carga y mensajes de exito/error accesibles;
 - busqueda, filtro Demo/Reales, contador y paginacion en clientes, agenda, leads, cotizaciones, atenciones, ingresos y gastos;
@@ -399,6 +400,19 @@ Cobrar a Ana Perez
 ```
 
 `Pago recibido` marca el ingreso pendiente mas antiguo del cliente como `PAID` si el monto cubre el total, o `PARTIAL` si el monto es menor. `Cobrar a...` envia al cliente la plantilla activa `payment_pending`.
+
+## Agenda y recordatorios
+
+La vista `Agenda` permite revisar servicios por `Hoy`, `Manana`, `Semana` o `Todas`, agrupados por dia. Cada cita muestra hora, cliente, telefono, lugar, detalle y estado operativo como `Hoy`, `Atrasada`, `Completada`, `Cancelada` o `No asistio`.
+
+Desde cada cita se puede:
+
+- editar o cancelar el servicio;
+- completar la cita para crear atencion e ingreso;
+- enviar un recordatorio al cliente por WhatsApp usando la plantilla activa `appointment_reminder`;
+- descargar un archivo `.ics` para agregar la cita a Google Calendar, Apple Calendar u Outlook.
+
+El recordatorio queda guardado como `WhatsAppMessage` saliente con `outboundSource=appointment_reminder` y se puede auditar en la trazabilidad Kapso. Si el cliente no tiene telefono, Fluxio bloquea el envio y muestra una advertencia.
 
 ## Detalle 360 del cliente
 

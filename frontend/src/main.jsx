@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertCircle, Calendar, Camera, CheckCircle, ChevronLeft, ChevronRight, Clipboard, DollarSign, Download, FileText, Home, LoaderCircle, LogOut, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Settings, ShieldCheck, Smartphone, TrendingUp, Users, WalletCards, X } from 'lucide-react';
+import { Activity, AlertCircle, Bell, Calendar, CalendarPlus, Camera, CheckCircle, ChevronLeft, ChevronRight, Clipboard, DollarSign, Download, FileText, Home, LoaderCircle, LogOut, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Settings, ShieldCheck, Smartphone, TrendingUp, Users, WalletCards, X } from 'lucide-react';
 import './styles/index.css';
 
 const API_URL = window.__FLUXIO_CONFIG__?.VITE_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -702,12 +702,15 @@ function AppointmentsPage({ createRequest = 0 }) {
   const [rows, setRows] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [demoFilter, setDemoFilter] = useState('all');
+  const [agendaRange, setAgendaRange] = useState('today');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
   const [completing, setCompleting] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [sendingReminderId, setSendingReminderId] = useState(null);
+  const [downloadingCalendarId, setDownloadingCalendarId] = useState(null);
   const [message, setMessage] = useState('');
   const [form, setForm] = useState({ contactId: '', title: '', startsAt: '', endsAt: '', location: '', description: '' });
   const [completionForm, setCompletionForm] = useState({ amount: '', paymentStatus: 'PENDING', paymentMethod: 'OTHER' });
@@ -727,7 +730,121 @@ function AppointmentsPage({ createRequest = 0 }) {
 
   useEffect(() => { load().catch(console.error); }, []);
   useEffect(() => { if (createRequest > 0) setCreating(true); }, [createRequest]);
-  const appointmentList = usePagedRows(rows, demoFilter, search, (row) => [row.title, row.description, row.location, row.status, row.contact?.fullName, row.contact?.phone].filter(Boolean).join(' '));
+  const appointmentRangeRows = rows
+    .filter((row) => appointmentMatchesRange(row, agendaRange))
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  const appointmentList = usePagedRows(appointmentRangeRows, demoFilter, search, (row) => [row.title, row.description, row.location, row.status, row.contact?.fullName, row.contact?.phone].filter(Boolean).join(' '));
+  const groupedAppointments = groupAppointmentsByDay(appointmentList.visibleRows);
+  const appointmentStats = {
+    today: rows.filter((row) => appointmentMatchesRange(row, 'today') && row.status === 'SCHEDULED').length,
+    tomorrow: rows.filter((row) => appointmentMatchesRange(row, 'tomorrow') && row.status === 'SCHEDULED').length,
+    overdue: rows.filter((row) => isAppointmentOverdue(row)).length,
+    pendingClient: rows.filter((row) => row.status === 'SCHEDULED' && !row.contact?.phone).length
+  };
+
+  function dayStart(date = new Date()) {
+    const value = new Date(date);
+    value.setHours(0, 0, 0, 0);
+    return value;
+  }
+
+  function appointmentMatchesRange(row, range) {
+    const date = new Date(row.startsAt);
+    const today = dayStart();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const afterTomorrow = new Date(today);
+    afterTomorrow.setDate(afterTomorrow.getDate() + 2);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    if (range === 'today') return date >= today && date < tomorrow;
+    if (range === 'tomorrow') return date >= tomorrow && date < afterTomorrow;
+    if (range === 'week') return date >= today && date < weekEnd;
+    return true;
+  }
+
+  function isAppointmentOverdue(row) {
+    return row.status === 'SCHEDULED' && new Date(row.startsAt).getTime() < Date.now();
+  }
+
+  function appointmentBadge(row) {
+    if (row.status === 'COMPLETED') return { label: 'Completada', className: 'bg-emerald-50 text-emerald-800' };
+    if (row.status === 'CANCELLED') return { label: 'Cancelada', className: 'bg-red-50 text-red-700' };
+    if (row.status === 'NO_SHOW') return { label: 'No asistio', className: 'bg-amber-50 text-amber-800' };
+    if (isAppointmentOverdue(row)) return { label: 'Atrasada', className: 'bg-red-50 text-red-700' };
+    if (appointmentMatchesRange(row, 'today')) return { label: 'Hoy', className: 'bg-emerald-50 text-emerald-800' };
+    return { label: statusLabel(row.status), className: 'bg-slate-100 text-slate-700' };
+  }
+
+  function groupAppointmentsByDay(items) {
+    const groups = new Map();
+    for (const item of items) {
+      const key = new Date(item.startsAt).toISOString().slice(0, 10);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    return [...groups.entries()].map(([key, items]) => ({ key, label: formatDayLabel(items[0].startsAt), items }));
+  }
+
+  function formatDayLabel(value) {
+    const date = new Date(value);
+    return date.toLocaleDateString('es-CL', { weekday: 'long', day: '2-digit', month: 'long' });
+  }
+
+  function formatTime(value) {
+    return new Date(value).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function sendReminder(row) {
+    if (!row.contact?.phone) {
+      setMessage('Agrega telefono al cliente antes de enviar el recordatorio.');
+      return;
+    }
+    const confirmed = window.confirm(`Enviar recordatorio por WhatsApp a ${row.contact.fullName || row.contact.phone}?`);
+    if (!confirmed) return;
+    setSendingReminderId(row.id);
+    setMessage('');
+    try {
+      const result = await api(`/appointments/${row.id}/send-reminder`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      setMessage(result.simulated ? 'Recordatorio registrado en modo simulado.' : 'Recordatorio enviado por WhatsApp.');
+      await load();
+    } catch (err) {
+      setMessage(errorMessage(err, 'No se pudo enviar el recordatorio.'));
+      console.error(err);
+    } finally {
+      setSendingReminderId(null);
+    }
+  }
+
+  async function downloadCalendar(row) {
+    setDownloadingCalendarId(row.id);
+    setMessage('');
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/appointments/${row.id}/calendar.ics`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!response.ok) throw new Error('No se pudo generar el archivo de calendario.');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${(row.title || 'cita').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.ics`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setMessage('Archivo de calendario descargado.');
+    } catch (err) {
+      setMessage(errorMessage(err, 'No se pudo descargar el archivo de calendario.'));
+      console.error(err);
+    } finally {
+      setDownloadingCalendarId(null);
+    }
+  }
 
   async function createAppointment(e) {
     e.preventDefault();
@@ -873,6 +990,37 @@ function AppointmentsPage({ createRequest = 0 }) {
         <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)}>Agendar servicio</button>
       </div>
       <FeedbackMessage message={message} />
+      <div className="mt-6 grid gap-3 md:grid-cols-4">
+        {[
+          ['Hoy', appointmentStats.today, 'Servicios agendados para hoy'],
+          ['Mañana', appointmentStats.tomorrow, 'Servicios programados'],
+          ['Atrasadas', appointmentStats.overdue, 'Pendientes de completar'],
+          ['Sin telefono', appointmentStats.pendingClient, 'No pueden recibir recordatorio']
+        ].map(([label, value, subtitle]) => (
+          <div key={label} className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-100">
+            <div className="text-xs font-semibold uppercase text-slate-400">{label}</div>
+            <div className="mt-1 text-2xl font-semibold text-slate-900">{value}</div>
+            <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 flex flex-wrap gap-2">
+        {[
+          ['today', 'Hoy'],
+          ['tomorrow', 'Mañana'],
+          ['week', 'Semana'],
+          ['all', 'Todas']
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={`rounded-lg px-4 py-2 text-sm font-semibold ${agendaRange === key ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50'}`}
+            onClick={() => setAgendaRange(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <ListToolbar search={search} setSearch={setSearch} demoFilter={demoFilter} setDemoFilter={setDemoFilter} totalRows={appointmentList.totalRows} placeholder="Buscar por cliente, servicio o lugar..." />
       {(creating || editing) && (
         <form className="mt-6 rounded-lg bg-white p-5 shadow-sm ring-1 ring-slate-100" onSubmit={editing ? saveAppointment : createAppointment}>
@@ -889,10 +1037,68 @@ function AppointmentsPage({ createRequest = 0 }) {
           <button className="mt-4 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving}>{saving ? 'Guardando...' : editing ? 'Guardar cambios' : 'Guardar en agenda'}</button>
         </form>
       )}
-      <div className="mt-6 overflow-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
-        <table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-4">Fecha</th><th className="p-4">Cliente</th><th className="p-4">Servicio</th><th className="p-4">Lugar</th><th className="p-4">Estado</th><th className="p-4">Acciones</th></tr></thead>
-          <tbody>{loading ? <LoadingRows columns={6} label="Cargando agenda..." /> : appointmentList.visibleRows.map((row) => <tr key={row.id} className="border-t"><td className="p-4">{formatDate(row.startsAt)}</td><td className="p-4">{row.contact?.fullName || row.contact?.phone || '-'}</td><td className="p-4 font-medium">{row.title}</td><td className="p-4">{row.location || '-'}</td><td className="p-4">{statusLabel(row.status)}</td><td className="p-4"><div className="flex flex-wrap gap-2"><button className="rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => startEdit(row)} disabled={saving}>Editar</button>{row.status === 'SCHEDULED' && !row.attendance && <button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-400" onClick={() => startCompletion(row)} disabled={saving}>Completar</button>}{row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-40" onClick={() => changeStatus(row, 'CANCELLED')} disabled={saving}>Cancelar</button>}{row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-40" onClick={() => changeStatus(row, 'NO_SHOW')} disabled={saving}>No asistio</button>}{!row.attendance && <button className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-40" onClick={() => deleteAppointment(row)} disabled={saving}>Eliminar</button>}</div></td></tr>)}{!loading && appointmentList.totalRows === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-500">{search ? 'No encontramos servicios con esa busqueda.' : 'No tienes servicios agendados.'}</td></tr>}</tbody>
-        </table>
+      <div className="mt-6 rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        {loading ? (
+          <div className="p-5">
+            <table className="w-full text-left text-sm"><tbody><LoadingRows columns={4} label="Cargando agenda..." /></tbody></table>
+          </div>
+        ) : groupedAppointments.length ? (
+          <div className="divide-y divide-slate-100">
+            {groupedAppointments.map((group) => (
+              <section key={group.key} className="p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold capitalize text-slate-700">
+                  <Calendar size={16} />
+                  {group.label}
+                </div>
+                <div className="grid gap-3">
+                  {group.items.map((row) => {
+                    const badge = appointmentBadge(row);
+                    return (
+                      <article key={row.id} className="grid gap-4 rounded-lg border border-slate-100 p-4 lg:grid-cols-[110px_1fr_auto] lg:items-start">
+                        <div className="rounded-lg bg-slate-50 p-3 text-center">
+                          <div className="text-2xl font-semibold text-slate-900">{formatTime(row.startsAt)}</div>
+                          <div className="mt-1 text-xs text-slate-500">{row.endsAt ? `hasta ${formatTime(row.endsAt)}` : 'sin termino'}</div>
+                        </div>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold text-slate-900">{row.title}</h3>
+                            <span className={`rounded-full px-2 py-1 text-xs font-semibold ${badge.className}`}>{badge.label}</span>
+                            <DemoBadge row={row} />
+                          </div>
+                          <div className="mt-2 grid gap-1 text-sm text-slate-600 md:grid-cols-2">
+                            <div><span className="font-medium text-slate-800">Cliente:</span> {row.contact?.fullName || row.contact?.phone || 'Sin cliente asociado'}</div>
+                            <div><span className="font-medium text-slate-800">Telefono:</span> {row.contact?.phone || 'Sin telefono'}</div>
+                            <div><span className="font-medium text-slate-800">Lugar:</span> {row.location || 'Sin lugar'}</div>
+                            <div><span className="font-medium text-slate-800">Detalle:</span> {row.description || 'Sin detalle'}</div>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 lg:max-w-72 lg:justify-end">
+                          <button className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold" onClick={() => startEdit(row)} disabled={saving}>Editar</button>
+                          <button className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-40" onClick={() => downloadCalendar(row)} disabled={downloadingCalendarId === row.id} title="Agregar a calendario">
+                            <CalendarPlus size={14} />
+                            {downloadingCalendarId === row.id ? 'Generando' : 'Calendario'}
+                          </button>
+                          {row.status === 'SCHEDULED' && (
+                            <button className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-40" onClick={() => sendReminder(row)} disabled={saving || sendingReminderId === row.id || !row.contact?.phone} title={row.contact?.phone ? 'Enviar recordatorio por WhatsApp' : 'Agrega telefono al cliente'}>
+                              <Bell size={14} />
+                              {sendingReminderId === row.id ? 'Enviando' : 'Recordar'}
+                            </button>
+                          )}
+                          {row.status === 'SCHEDULED' && !row.attendance && <button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-400" onClick={() => startCompletion(row)} disabled={saving}>Completar</button>}
+                          {row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-40" onClick={() => changeStatus(row, 'CANCELLED')} disabled={saving}>Cancelar</button>}
+                          {row.status === 'SCHEDULED' && <button className="rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-40" onClick={() => changeStatus(row, 'NO_SHOW')} disabled={saving}>No asistio</button>}
+                          {!row.attendance && <button className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700 disabled:opacity-40" onClick={() => deleteAppointment(row)} disabled={saving}>Eliminar</button>}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <div className="p-8 text-center text-slate-500">{search ? 'No encontramos servicios con esa busqueda.' : 'No tienes servicios en este filtro.'}</div>
+        )}
         <Pagination page={appointmentList.page} totalPages={appointmentList.totalPages} setPage={appointmentList.setPage} />
       </div>
       {completing && (

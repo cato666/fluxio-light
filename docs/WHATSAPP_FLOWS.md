@@ -229,6 +229,8 @@ Agenda hoy:
 15:30 - Ana Perez - Curacion - Maipu
 ```
 
+Desde la vista web de agenda, cada cita tambien permite enviar al cliente un recordatorio por WhatsApp usando la plantilla `appointment_reminder` y descargar un archivo `.ics` para agregarla al calendario del profesional.
+
 ## Ingresos
 
 Comando:
