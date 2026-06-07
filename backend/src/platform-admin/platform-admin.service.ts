@@ -1,7 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { KapsoConfigService } from '../kapso/kapso-config.service';
+import { KapsoService } from '../kapso/kapso.service';
 
 type AccountAction = 'ACTIVE' | 'SUSPENDED' | 'PENDING_APPROVAL';
 
@@ -9,7 +11,9 @@ type AccountAction = 'ACTIVE' | 'SUSPENDED' | 'PENDING_APPROVAL';
 export class PlatformAdminService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService
+    private readonly config: ConfigService,
+    private readonly kapsoConfig: KapsoConfigService,
+    private readonly kapsoService: KapsoService
   ) {}
 
   async overview() {
@@ -1305,29 +1309,289 @@ export class PlatformAdminService {
         professional: {
           include: { user: true }
         },
-        conversation: true
+        conversation: true,
+        retryOfMessage: true
       }
     });
 
-    return rows.map((row) => ({
-      id: row.id,
-      professionalId: row.professionalId,
-      professionalName: row.professional.displayName,
-      professionalEmail: row.professional.user.email,
-      conversationId: row.conversationId,
-      contactName: row.conversation?.contactName,
-      toPhone: row.toPhone,
-      text: row.text,
-      outboundStatus: row.outboundStatus,
-      outboundSource: row.outboundSource,
-      outboundError: row.outboundError,
-      kapsoMessageId: row.kapsoMessageId,
-      sentAt: row.sentAt,
-      deliveredAt: row.deliveredAt,
-      readAt: row.readAt,
-      failedAt: row.failedAt,
-      createdAt: row.createdAt
-    }));
+    return rows.map((row) => this.mapOutboundMessage(row));
+  }
+
+  async whatsappHealth() {
+    const now = new Date();
+    const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const stuckBefore = new Date(now.getTime() - 5 * 60 * 1000);
+    const successfulStatuses = ['SENT', 'DELIVERED', 'READ', 'SIMULATED'];
+    const [
+      statusGroups,
+      stuckMessages,
+      lastWebhook,
+      lastInbound,
+      lastOutbound,
+      connectionGroups,
+      failedConnections
+    ] = await Promise.all([
+      this.prisma.whatsAppMessage.groupBy({
+        by: ['outboundStatus'],
+        where: { direction: 'OUTBOUND', createdAt: { gte: last24Hours } },
+        _count: { _all: true }
+      }),
+      this.prisma.whatsAppMessage.findMany({
+        where: {
+          direction: 'OUTBOUND',
+          outboundStatus: 'SENDING',
+          createdAt: { lt: stuckBefore }
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 20,
+        include: {
+          professional: { include: { user: true } },
+          conversation: true,
+          retryOfMessage: true
+        }
+      }),
+      this.prisma.auditLog.findFirst({
+        where: { action: 'KAPSO_WEBHOOK_RECEIVED' },
+        orderBy: { createdAt: 'desc' }
+      }),
+      this.prisma.whatsAppMessage.findFirst({
+        where: { direction: 'INBOUND' },
+        orderBy: { createdAt: 'desc' }
+      }),
+      this.prisma.whatsAppMessage.findFirst({
+        where: { direction: 'OUTBOUND' },
+        orderBy: { createdAt: 'desc' }
+      }),
+      this.prisma.whatsAppConnection.groupBy({
+        by: ['status'],
+        _count: { _all: true }
+      }),
+      this.prisma.whatsAppConnection.findMany({
+        where: { OR: [{ status: { equals: 'failed', mode: 'insensitive' } }, { lastError: { not: null } }] },
+        orderBy: { updatedAt: 'desc' },
+        take: 10,
+        include: { professional: { include: { user: true } } }
+      })
+    ]);
+
+    const statusCounts = Object.fromEntries(
+      statusGroups.map((group) => [(group.outboundStatus || 'UNKNOWN').toUpperCase(), group._count._all])
+    );
+    const connectionCounts = Object.fromEntries(
+      connectionGroups.map((group) => [(group.status || 'UNKNOWN').toUpperCase(), group._count._all])
+    );
+    const total = statusGroups.reduce((sum, group) => sum + group._count._all, 0);
+    const successful = successfulStatuses.reduce((sum, status) => sum + (statusCounts[status] || 0), 0);
+    const failed = statusCounts.FAILED || 0;
+    const terminal = successful + failed;
+    const issues: Array<{ severity: 'warning' | 'critical'; title: string; detail: string }> = [];
+    const kapso = this.kapsoConfig.get();
+
+    if (!kapso.isApiConfigured) {
+      issues.push({
+        severity: kapso.isSandbox ? 'warning' : 'critical',
+        title: 'API de Kapso no configurada',
+        detail: 'Los mensajes salientes quedan simulados hasta configurar una API key valida.'
+      });
+    }
+    if (stuckMessages.length) {
+      issues.push({
+        severity: 'critical',
+        title: `${stuckMessages.length} mensaje${stuckMessages.length === 1 ? '' : 's'} atascado${stuckMessages.length === 1 ? '' : 's'}`,
+        detail: 'Llevan mas de cinco minutos en estado SENDING y ya pueden revisarse o reintentarse.'
+      });
+    }
+    if (failed > 0) {
+      issues.push({
+        severity: failed >= 5 ? 'critical' : 'warning',
+        title: `${failed} envio${failed === 1 ? '' : 's'} fallido${failed === 1 ? '' : 's'} en 24 horas`,
+        detail: 'Revisa el error y usa el reintento controlado solo cuando la causa este corregida.'
+      });
+    }
+    if (failedConnections.length) {
+      issues.push({
+        severity: 'warning',
+        title: `${failedConnections.length} conexion${failedConnections.length === 1 ? '' : 'es'} requiere${failedConnections.length === 1 ? '' : 'n'} revision`,
+        detail: 'Hay conexiones con estado fallido o con un ultimo error registrado.'
+      });
+    }
+
+    const critical = issues.some((issue) => issue.severity === 'critical');
+    return {
+      status: critical ? 'CRITICAL' : issues.length ? 'WARNING' : 'HEALTHY',
+      generatedAt: now,
+      configuration: {
+        mode: kapso.mode,
+        apiConfigured: kapso.isApiConfigured,
+        webhookConfigured: kapso.isWebhookConfigured
+      },
+      activity: {
+        lastWebhookAt: lastWebhook?.createdAt || null,
+        lastInboundAt: lastInbound?.createdAt || null,
+        lastOutboundAt: lastOutbound?.createdAt || null
+      },
+      last24Hours: {
+        total,
+        sent: statusCounts.SENT || 0,
+        delivered: statusCounts.DELIVERED || 0,
+        read: statusCounts.READ || 0,
+        simulated: statusCounts.SIMULATED || 0,
+        failed,
+        sending: statusCounts.SENDING || 0,
+        stuck: stuckMessages.length,
+        successRate: terminal ? Math.round((successful / terminal) * 100) : 100
+      },
+      connections: {
+        total: connectionGroups.reduce((sum, group) => sum + group._count._all, 0),
+        connected: connectionCounts.CONNECTED || 0,
+        failed: connectionCounts.FAILED || 0,
+        pending: connectionCounts.PENDING || 0,
+        withErrors: failedConnections.map((connection) => ({
+          id: connection.id,
+          professionalId: connection.professionalId,
+          professionalName: connection.professional.displayName,
+          professionalEmail: connection.professional.user.email,
+          status: connection.status,
+          lastError: connection.lastError,
+          updatedAt: connection.updatedAt
+        }))
+      },
+      issues,
+      stuckMessages: stuckMessages.map((row) => this.mapOutboundMessage(row))
+    };
+  }
+
+  async retryOutboundMessage(id: string) {
+    const original = await this.prisma.whatsAppMessage.findUnique({
+      where: { id },
+      include: {
+        professional: { include: { user: true } },
+        conversation: true
+      }
+    });
+    if (!original || original.direction !== 'OUTBOUND') {
+      throw new NotFoundException('Mensaje saliente no encontrado.');
+    }
+
+    const retryRoot = original.retryOfMessageId
+      ? await this.prisma.whatsAppMessage.findUnique({ where: { id: original.retryOfMessageId } })
+      : original;
+    if (!retryRoot) {
+      throw new BadRequestException('No se encontro el mensaje original del reintento.');
+    }
+    const eligibility = this.outboundRetryEligibility(original, retryRoot);
+    if (!eligibility.retryable) {
+      throw new BadRequestException(eligibility.reason);
+    }
+    if (!original.toPhone) {
+      throw new BadRequestException('El mensaje no tiene un telefono de destino.');
+    }
+    const originalPayload = (original.payload || {}) as Record<string, any>;
+    const originalDocument = originalPayload.document || {};
+    if (original.type === 'text' && !original.text) {
+      throw new BadRequestException('El mensaje original no conserva texto para reenviar.');
+    }
+    if (original.type === 'document' && (!originalDocument.link || !originalDocument.fileName)) {
+      throw new BadRequestException('El documento original no conserva un enlace reutilizable.');
+    }
+
+    const connection = await this.prisma.whatsAppConnection.findFirst({
+      where: { professionalId: original.professionalId, phoneNumberId: { not: null } },
+      orderBy: { updatedAt: 'desc' }
+    });
+    if (!connection?.phoneNumberId || connection.status.toLowerCase() !== 'connected') {
+      throw new BadRequestException('El profesional no tiene una conexion WhatsApp activa.');
+    }
+
+    const now = new Date();
+    const reserved = await this.prisma.whatsAppMessage.updateMany({
+      where: {
+        id: retryRoot.id,
+        retryCount: { lt: 3 },
+        OR: [
+          { lastRetryAt: null },
+          { lastRetryAt: { lte: new Date(now.getTime() - 30 * 1000) } }
+        ]
+      },
+      data: {
+        retryCount: { increment: 1 },
+        lastRetryAt: now
+      }
+    });
+    if (!reserved.count) {
+      throw new BadRequestException('El mensaje alcanzo el limite de reintentos o aun esta en espera.');
+    }
+
+    const retryAttempt = retryRoot.retryCount + 1;
+    await this.prisma.auditLog.create({
+      data: {
+        professionalId: original.professionalId,
+        action: 'WHATSAPP_OUTBOUND_RETRY_REQUESTED',
+        entity: 'WhatsAppMessage',
+        entityId: retryRoot.id,
+        metadata: { retryAttempt, previousStatus: original.outboundStatus, toPhone: original.toPhone }
+      }
+    });
+
+    try {
+      const common = {
+        professionalId: original.professionalId,
+        phoneNumberId: connection.phoneNumberId,
+        to: original.toPhone,
+        conversationId: original.conversationId,
+        fromPhone: connection.displayPhone || original.fromPhone,
+        source: `retry:${original.outboundSource || 'admin'}`,
+        retryOfMessageId: retryRoot.id,
+        metadata: { retryAttempt, originalMessageId: retryRoot.id }
+      };
+      let result;
+      if (original.type === 'text' && original.text) {
+        result = await this.kapsoService.sendTrackedTextMessage({ ...common, body: original.text });
+      } else if (original.type === 'document') {
+        result = await this.kapsoService.sendTrackedDocumentMessage({
+          ...common,
+          link: originalDocument.link,
+          fileName: originalDocument.fileName,
+          caption: original.text || undefined
+        });
+      } else {
+        throw new BadRequestException(`El tipo ${original.type} no admite reintento automatico.`);
+      }
+
+      await this.prisma.auditLog.create({
+        data: {
+          professionalId: original.professionalId,
+          action: 'WHATSAPP_OUTBOUND_RETRY_SUCCEEDED',
+          entity: 'WhatsAppMessage',
+          entityId: result.messageId,
+          metadata: { retryAttempt, originalMessageId: retryRoot.id, simulated: result.simulated }
+        }
+      });
+      return {
+        ok: true,
+        retryAttempt,
+        originalMessageId: retryRoot.id,
+        message: this.mapOutboundMessage({
+          ...result.message,
+          professional: original.professional,
+          conversation: original.conversation,
+          retryOfMessage: { ...retryRoot, retryCount: retryAttempt, lastRetryAt: now }
+        })
+      };
+    } catch (error: any) {
+      const message = error?.message || 'No se pudo reintentar el mensaje.';
+      await this.prisma.auditLog.create({
+        data: {
+          professionalId: original.professionalId,
+          action: 'WHATSAPP_OUTBOUND_RETRY_FAILED',
+          entity: 'WhatsAppMessage',
+          entityId: retryRoot.id,
+          metadata: { retryAttempt, originalMessageId: retryRoot.id, error: message }
+        }
+      });
+      if (error instanceof BadRequestException) throw error;
+      throw new BadGatewayException(message);
+    }
   }
 
   async previewPhoneReassignment(phone: string) {
@@ -2112,6 +2376,60 @@ export class PlatformAdminService {
         ]
       }
     };
+  }
+
+  private mapOutboundMessage(row: any) {
+    const retryRoot = row.retryOfMessage || row;
+    const eligibility = this.outboundRetryEligibility(row, retryRoot);
+    return {
+      id: row.id,
+      professionalId: row.professionalId,
+      professionalName: row.professional.displayName,
+      professionalEmail: row.professional.user.email,
+      conversationId: row.conversationId,
+      contactName: row.conversation?.contactName,
+      toPhone: row.toPhone,
+      type: row.type,
+      text: row.text,
+      payload: row.payload,
+      outboundStatus: row.outboundStatus,
+      outboundSource: row.outboundSource,
+      outboundError: row.outboundError,
+      kapsoMessageId: row.kapsoMessageId,
+      sentAt: row.sentAt,
+      deliveredAt: row.deliveredAt,
+      readAt: row.readAt,
+      failedAt: row.failedAt,
+      retryCount: retryRoot.retryCount || 0,
+      lastRetryAt: retryRoot.lastRetryAt || null,
+      retryOfMessageId: row.retryOfMessageId,
+      retryable: eligibility.retryable,
+      retryBlockedReason: eligibility.retryable ? null : eligibility.reason,
+      operationalStatus: this.isOutboundStuck(row) ? 'STUCK' : row.outboundStatus,
+      createdAt: row.createdAt
+    };
+  }
+
+  private outboundRetryEligibility(message: any, retryRoot: any = message) {
+    const status = (message.outboundStatus || '').toUpperCase();
+    if (status !== 'FAILED' && !this.isOutboundStuck(message)) {
+      return { retryable: false, reason: 'Solo se pueden reintentar mensajes fallidos o atascados.' };
+    }
+    if (!['text', 'document'].includes(message.type)) {
+      return { retryable: false, reason: `El tipo ${message.type} no admite reintento automatico.` };
+    }
+    if ((retryRoot.retryCount || 0) >= 3) {
+      return { retryable: false, reason: 'El mensaje alcanzo el maximo de tres reintentos.' };
+    }
+    if (retryRoot.lastRetryAt && Date.now() - new Date(retryRoot.lastRetryAt).getTime() < 30 * 1000) {
+      return { retryable: false, reason: 'Espera 30 segundos antes de volver a reintentar.' };
+    }
+    return { retryable: true, reason: null };
+  }
+
+  private isOutboundStuck(message: any) {
+    return (message.outboundStatus || '').toUpperCase() === 'SENDING'
+      && Date.now() - new Date(message.createdAt).getTime() >= 5 * 60 * 1000;
   }
 
   private buildActivationChecklist(flags: Record<string, boolean>) {

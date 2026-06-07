@@ -27,6 +27,20 @@ POST /kapso/webhook
 POST /kapso/send-message
 ```
 
+## Administracion WhatsApp
+
+Requiere usuario incluido en `PLATFORM_ADMIN_EMAILS`.
+
+```txt
+GET /platform-admin/whatsapp-health
+GET /platform-admin/outbound-messages?status=FAILED&take=30
+POST /platform-admin/outbound-messages/:id/retry
+```
+
+`GET /platform-admin/whatsapp-health` devuelve actividad reciente, configuracion Kapso, conexiones, metricas de las ultimas 24 horas, alertas y mensajes `SENDING` atascados por mas de cinco minutos.
+
+`POST /platform-admin/outbound-messages/:id/retry` solo admite mensajes `text` o `document` fallidos/atascados. Aplica espera minima de 30 segundos, maximo tres intentos por mensaje original y deja trazabilidad en `AuditLog`.
+
 ## CRUD principales
 
 ```txt

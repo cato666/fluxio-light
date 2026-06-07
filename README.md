@@ -475,6 +475,25 @@ Visibilidad:
 
 - En `WhatsApp`, las burbujas salientes muestran el estado y el error si falla.
 - En `Admin plataforma`, la tabla `Mensajes salientes Kapso` muestra los ultimos intentos globales y ayuda a diagnosticar problemas de API key, configuracion o numero conectado.
+- El `Centro de salud WhatsApp` resume webhooks, entradas, salidas, conexiones, tasa de exito, fallos y mensajes atascados de las ultimas 24 horas.
+
+### Reintentos controlados
+
+El administrador de plataforma puede reintentar mensajes `text` y `document` cuando:
+
+- el intento esta `FAILED`, o sigue `SENDING` despues de cinco minutos;
+- han pasado al menos 30 segundos desde el ultimo reintento;
+- el mensaje original no supera tres reintentos;
+- el profesional conserva una conexion WhatsApp activa.
+
+Cada reintento crea un nuevo `WhatsAppMessage`, mantiene el intento anterior y registra auditoria. Fluxio nunca reenvia automaticamente desde el centro de salud: el administrador debe revisar el error y confirmar la accion.
+
+Prueba de salud y protecciones, sin enviar mensajes reales:
+
+```bash
+cd backend
+npm run test:whatsapp:health
+```
 
 ## Kapso Sandbox local
 

@@ -83,6 +83,16 @@ export class PlatformAdminController {
     return this.service.outboundMessages(status || '', Number(take || 50));
   }
 
+  @Get('whatsapp-health')
+  whatsappHealth() {
+    return this.service.whatsappHealth();
+  }
+
+  @Post('outbound-messages/:id/retry')
+  retryOutboundMessage(@Param('id') id: string) {
+    return this.service.retryOutboundMessage(id);
+  }
+
   @Get('data-reassignment/preview')
   previewPhoneReassignment(@Query('phone') phone?: string) {
     return this.service.previewPhoneReassignment(phone || '');

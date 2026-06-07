@@ -13,6 +13,7 @@ export interface TrackedTextMessageInput {
   fromPhone?: string | null;
   source: string;
   metadata?: Record<string, unknown>;
+  retryOfMessageId?: string;
 }
 
 export interface TrackedDocumentMessageInput {
@@ -26,6 +27,7 @@ export interface TrackedDocumentMessageInput {
   fromPhone?: string | null;
   source: string;
   metadata?: Record<string, unknown>;
+  retryOfMessageId?: string;
 }
 
 @Injectable()
@@ -257,6 +259,7 @@ export class KapsoService {
         toPhone: input.to,
         type: 'text',
         text: input.body,
+        retryOfMessageId: input.retryOfMessageId,
         payload: {
           source: input.source,
           ...(input.metadata || {})
@@ -365,6 +368,7 @@ export class KapsoService {
         toPhone: input.to,
         type: 'document',
         text: input.caption,
+        retryOfMessageId: input.retryOfMessageId,
         payload: {
           source: input.source,
           document: { link: input.link, fileName: input.fileName },

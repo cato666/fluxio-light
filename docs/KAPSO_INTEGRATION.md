@@ -432,3 +432,21 @@ Prueba local de media:
 cd backend
 npm run test:webhook:kapso-media
 ```
+
+## Salud operacional y reintentos
+
+El panel `Admin plataforma` incluye un centro de salud global alimentado por:
+
+- `AuditLog` con `KAPSO_WEBHOOK_RECEIVED`;
+- estados de `WhatsAppMessage`;
+- estado y ultimo error de `WhatsAppConnection`.
+
+Un mensaje se considera atascado si permanece `SENDING` por mas de cinco minutos. El panel permite un reintento manual cuando el mensaje esta `FAILED` o atascado, con maximo tres reintentos y una espera de 30 segundos entre intentos.
+
+El nuevo envio queda relacionado mediante `retryOfMessageId`; el intento original conserva `retryCount` y `lastRetryAt`. Tambien se registran:
+
+- `WHATSAPP_OUTBOUND_RETRY_REQUESTED`;
+- `WHATSAPP_OUTBOUND_RETRY_SUCCEEDED`;
+- `WHATSAPP_OUTBOUND_RETRY_FAILED`.
+
+No existe un reintento automatico en segundo plano. Esta decision evita duplicar mensajes al cliente cuando Kapso acepto el envio pero la confirmacion tardo en llegar.

@@ -421,13 +421,19 @@ model WhatsAppMessage {
   toPhone        String?
   type           String
   text           String?
-  payload        Json?
-  createdAt      DateTime     @default(now())
+    payload        Json?
+    retryCount     Int          @default(0)
+    lastRetryAt    DateTime?
+    retryOfMessageId String?
+    retryOfMessage WhatsAppMessage? @relation("WhatsAppMessageRetries", fields: [retryOfMessageId], references: [id])
+    retries        WhatsAppMessage[] @relation("WhatsAppMessageRetries")
+    createdAt      DateTime     @default(now())
 
   evidenceFiles  EvidenceFile[]
 
-  @@index([professionalId, direction, outboundStatus])
-  @@index([kapsoMessageId])
+    @@index([professionalId, direction, outboundStatus])
+    @@index([kapsoMessageId])
+    @@index([retryOfMessageId])
 }
 
 model AssistantPendingAction {

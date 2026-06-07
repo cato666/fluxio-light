@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertCircle, Calendar, Camera, CheckCircle, ChevronLeft, ChevronRight, Clipboard, DollarSign, Download, FileText, Home, LoaderCircle, LogOut, MessageCircle, MoreHorizontal, Plus, Search, Send, Settings, ShieldCheck, Smartphone, TrendingUp, Users, WalletCards, X } from 'lucide-react';
+import { Activity, AlertCircle, Calendar, Camera, CheckCircle, ChevronLeft, ChevronRight, Clipboard, DollarSign, Download, FileText, Home, LoaderCircle, LogOut, MessageCircle, MoreHorizontal, Plus, RefreshCw, Search, Send, Settings, ShieldCheck, Smartphone, TrendingUp, Users, WalletCards, X } from 'lucide-react';
 import './styles/index.css';
 
 const API_URL = window.__FLUXIO_CONFIG__?.VITE_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -3069,6 +3069,101 @@ function EventsPage() {
 
       {message && <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{message}</div>}
 
+      <section className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className={`rounded-lg p-2 ${
+              whatsappHealth?.status === 'HEALTHY' ? 'bg-emerald-50 text-emerald-700' :
+              whatsappHealth?.status === 'CRITICAL' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+            }`}>
+              <Activity size={22} />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-semibold text-slate-900">Centro de salud WhatsApp</h2>
+                {whatsappHealth && (
+                  <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                    whatsappHealth.status === 'HEALTHY' ? 'bg-emerald-50 text-emerald-800' :
+                    whatsappHealth.status === 'CRITICAL' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'
+                  }`}>
+                    {whatsappHealth.status === 'HEALTHY' ? 'Saludable' : whatsappHealth.status === 'CRITICAL' ? 'Critico' : 'Requiere atencion'}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-sm text-slate-500">Estado de webhooks, conexiones y mensajes salientes durante las ultimas 24 horas.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            onClick={() => load()}
+            disabled={loading}
+            title="Actualizar salud WhatsApp"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            Actualizar
+          </button>
+        </div>
+
+        <div className="grid border-b border-slate-100 sm:grid-cols-2 lg:grid-cols-6">
+          {[
+            ['Enviados', whatsappHealth?.last24Hours?.sent || 0],
+            ['Entregados', whatsappHealth?.last24Hours?.delivered || 0],
+            ['Leidos', whatsappHealth?.last24Hours?.read || 0],
+            ['Fallidos', whatsappHealth?.last24Hours?.failed || 0],
+            ['Atascados', whatsappHealth?.last24Hours?.stuck || 0],
+            ['Exito', `${whatsappHealth?.last24Hours?.successRate ?? 100}%`]
+          ].map(([label, value]) => (
+            <div key={label} className="border-b border-slate-100 p-4 last:border-b-0 sm:border-r lg:border-b-0">
+              <div className="text-xs font-semibold uppercase text-slate-400">{label}</div>
+              <div className="mt-1 text-2xl font-semibold text-slate-900">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="border-b border-slate-100 p-5 lg:border-b-0 lg:border-r">
+            <h3 className="text-sm font-semibold text-slate-900">Alertas operativas</h3>
+            <div className="mt-3 divide-y divide-slate-100">
+              {(whatsappHealth?.issues || []).map((issue, index) => (
+                <div key={`${issue.title}-${index}`} className="flex gap-3 py-3 first:pt-0">
+                  <AlertCircle size={18} className={issue.severity === 'critical' ? 'mt-0.5 shrink-0 text-red-600' : 'mt-0.5 shrink-0 text-amber-600'} />
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{issue.title}</div>
+                    <div className="mt-0.5 text-sm text-slate-500">{issue.detail}</div>
+                  </div>
+                </div>
+              ))}
+              {whatsappHealth && whatsappHealth.issues.length === 0 && (
+                <div className="flex items-center gap-2 py-2 text-sm text-emerald-700">
+                  <CheckCircle size={18} />
+                  No hay alertas operativas activas.
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="p-5">
+            <h3 className="text-sm font-semibold text-slate-900">Actividad y configuracion</h3>
+            <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              <dt className="text-slate-500">Ultimo webhook</dt>
+              <dd className="text-right font-medium text-slate-800">{whatsappHealth?.activity?.lastWebhookAt ? formatDate(whatsappHealth.activity.lastWebhookAt) : 'Sin actividad'}</dd>
+              <dt className="text-slate-500">Ultimo entrante</dt>
+              <dd className="text-right font-medium text-slate-800">{whatsappHealth?.activity?.lastInboundAt ? formatDate(whatsappHealth.activity.lastInboundAt) : 'Sin actividad'}</dd>
+              <dt className="text-slate-500">Ultimo saliente</dt>
+              <dd className="text-right font-medium text-slate-800">{whatsappHealth?.activity?.lastOutboundAt ? formatDate(whatsappHealth.activity.lastOutboundAt) : 'Sin actividad'}</dd>
+              <dt className="text-slate-500">Conexiones</dt>
+              <dd className="text-right font-medium text-slate-800">{whatsappHealth?.connections?.connected || 0} conectadas / {whatsappHealth?.connections?.total || 0} total</dd>
+              <dt className="text-slate-500">Modo Kapso</dt>
+              <dd className="text-right font-medium capitalize text-slate-800">{whatsappHealth?.configuration?.mode || '-'}</dd>
+              <dt className="text-slate-500">API / webhook</dt>
+              <dd className="text-right font-medium text-slate-800">
+                {whatsappHealth?.configuration?.apiConfigured ? 'API lista' : 'API pendiente'} · {whatsappHealth?.configuration?.webhookConfigured ? 'Firma lista' : 'Firma pendiente'}
+              </dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+
       <div className="mt-6 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-100">
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-slate-500">
@@ -3199,6 +3294,8 @@ function PlatformAdminPage() {
   const [invitations, setInvitations] = useState([]);
   const [routing, setRouting] = useState(null);
   const [outboundRows, setOutboundRows] = useState([]);
+  const [whatsappHealth, setWhatsappHealth] = useState(null);
+  const [retryingMessageId, setRetryingMessageId] = useState(null);
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -3230,18 +3327,20 @@ function PlatformAdminPage() {
     setLoading(true);
     setMessage('');
     try {
-      const [overviewData, professionalRows, routingData, invitationRows] = await Promise.all([
+      const [overviewData, professionalRows, routingData, invitationRows, outboundData, healthData] = await Promise.all([
         api('/platform-admin/overview'),
         api(`/platform-admin/professionals${search ? `?q=${encodeURIComponent(search)}` : ''}`),
         api('/platform-admin/routing-validation'),
-        api('/platform-admin/invitations')
+        api('/platform-admin/invitations'),
+        api('/platform-admin/outbound-messages?take=30'),
+        api('/platform-admin/whatsapp-health')
       ]);
-      const outboundData = await api('/platform-admin/outbound-messages?take=30');
       setOverview(overviewData);
       setProfessionals(professionalRows);
       setRouting(routingData);
       setInvitations(invitationRows);
       setOutboundRows(outboundData);
+      setWhatsappHealth(healthData);
     } catch (err) {
       setMessage('No se pudo cargar el panel de administracion.');
       console.error(err);
@@ -3253,6 +3352,28 @@ function PlatformAdminPage() {
   useEffect(() => {
     load('');
   }, []);
+
+  async function retryOutboundMessage(row) {
+    const confirmed = window.confirm(`Reintentar el mensaje para ${row.contactName || row.toPhone}? Esto enviara un nuevo mensaje por WhatsApp.`);
+    if (!confirmed) return;
+    setRetryingMessageId(row.id);
+    setMessage('');
+    try {
+      const result = await api(`/platform-admin/outbound-messages/${row.id}/retry`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      await load();
+      setMessage(result.message?.outboundStatus === 'SIMULATED'
+        ? 'Reintento registrado en modo simulado.'
+        : `Mensaje reenviado. Intento ${result.retryAttempt} de 3.`);
+    } catch (err) {
+      setMessage(err?.message || 'No se pudo reintentar el mensaje.');
+      console.error(err);
+    } finally {
+      setRetryingMessageId(null);
+    }
+  }
 
   async function changeStatus(row, status) {
     setWorkingId(row.id);
@@ -3940,6 +4061,7 @@ function PlatformAdminPage() {
                 <th className="p-4">Origen</th>
                 <th className="p-4">Estado</th>
                 <th className="p-4">Mensaje/Error</th>
+                <th className="p-4">Accion</th>
               </tr>
             </thead>
             <tbody>
@@ -3954,18 +4076,34 @@ function PlatformAdminPage() {
                   <td className="p-4">{row.outboundSource || '-'}</td>
                   <td className="p-4">
                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                      row.outboundStatus === 'FAILED' ? 'bg-red-50 text-red-700' : row.outboundStatus === 'SENT' || row.outboundStatus === 'DELIVERED' || row.outboundStatus === 'READ' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                      row.operationalStatus === 'FAILED' || row.operationalStatus === 'STUCK' ? 'bg-red-50 text-red-700' : row.operationalStatus === 'SENT' || row.operationalStatus === 'DELIVERED' || row.operationalStatus === 'READ' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'
                     }`}>
-                      {row.outboundStatus || 'sin estado'}
+                      {row.operationalStatus === 'STUCK' ? 'ATASCADO' : row.operationalStatus || 'sin estado'}
                     </span>
+                    {row.retryCount > 0 && <div className="mt-2 text-xs text-slate-500">{row.retryCount}/3 reintentos</div>}
                   </td>
                   <td className="max-w-md p-4">
                     <div className="line-clamp-2 whitespace-pre-wrap break-words text-slate-700">{row.outboundError || row.text || '-'}</div>
                     {row.kapsoMessageId && <div className="mt-1 truncate text-xs text-slate-400">{row.kapsoMessageId}</div>}
                   </td>
+                  <td className="p-4">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => retryOutboundMessage(row)}
+                      disabled={!row.retryable || retryingMessageId === row.id}
+                      title={row.retryable ? 'Reintentar envio' : row.retryBlockedReason || 'Reintento no disponible'}
+                    >
+                      <RefreshCw size={14} className={retryingMessageId === row.id ? 'animate-spin' : ''} />
+                      {retryingMessageId === row.id ? 'Enviando' : 'Reintentar'}
+                    </button>
+                    {!row.retryable && row.retryBlockedReason && (
+                      <div className="mt-2 max-w-44 text-xs text-slate-400">{row.retryBlockedReason}</div>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {outboundRows.length === 0 && <tr><td className="p-6 text-slate-500" colSpan={6}>Sin mensajes salientes.</td></tr>}
+              {outboundRows.length === 0 && <tr><td className="p-6 text-slate-500" colSpan={7}>Sin mensajes salientes.</td></tr>}
             </tbody>
           </table>
         </div>
