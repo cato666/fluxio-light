@@ -69,15 +69,22 @@ async function main() {
   });
 
   try {
-    await postWebhook('menu', assistantPhone, phoneNumberId);
-    if (await pendingType(professional.id, assistantPhone) !== 'GUIDED_MENU') throw new Error('Menu was not opened.');
+    const recovery = await postWebhook('comando que no existe', assistantPhone, phoneNumberId);
+    if (!recovery.result?.recovered || await pendingType(professional.id, assistantPhone) !== 'GUIDED_MENU') {
+      throw new Error(`Unknown command recovery failed: ${JSON.stringify(recovery)}`);
+    }
 
-    await postWebhook('1', assistantPhone, phoneNumberId);
+    await postWebhook('atencion', assistantPhone, phoneNumberId);
+    if (await pendingType(professional.id, assistantPhone) !== 'GUIDED_ATTENDANCE') throw new Error('Attendance alias was not accepted.');
     await postWebhook(contactName, assistantPhone, phoneNumberId);
     await postWebhook(attendanceTitle, assistantPhone, phoneNumberId);
     await postWebhook('25000', assistantPhone, phoneNumberId);
-    await postWebhook('1', assistantPhone, phoneNumberId);
-    await postWebhook('1', assistantPhone, phoneNumberId);
+    const invalidPayment = await postWebhook('bitcoin', assistantPhone, phoneNumberId);
+    if (await pendingType(professional.id, assistantPhone) !== 'GUIDED_ATTENDANCE' || !invalidPayment.result?.guided) {
+      throw new Error(`Invalid payment retry failed: ${JSON.stringify(invalidPayment)}`);
+    }
+    await postWebhook('transferencia', assistantPhone, phoneNumberId);
+    await postWebhook('si', assistantPhone, phoneNumberId);
 
     const attendance = await prisma.attendance.findFirst({
       where: { professionalId: professional.id, contactId: contact.id, title: attendanceTitle },
@@ -88,10 +95,10 @@ async function main() {
     }
 
     await postWebhook('menu', assistantPhone, phoneNumberId);
-    await postWebhook('4', assistantPhone, phoneNumberId);
+    await postWebhook('gasto', assistantPhone, phoneNumberId);
     await postWebhook(expenseDescription, assistantPhone, phoneNumberId);
     await postWebhook('8500', assistantPhone, phoneNumberId);
-    await postWebhook('1', assistantPhone, phoneNumberId);
+    await postWebhook('confirmar', assistantPhone, phoneNumberId);
 
     const expense = await prisma.expense.findFirst({
       where: { professionalId: professional.id, description: expenseDescription }
@@ -99,16 +106,16 @@ async function main() {
     if (!expense || expense.amount !== 8500) throw new Error(`Expense flow failed: ${JSON.stringify(expense)}`);
 
     await postWebhook('menu', assistantPhone, phoneNumberId);
-    await postWebhook('2', assistantPhone, phoneNumberId);
+    await postWebhook('cotizacion', assistantPhone, phoneNumberId);
     await postWebhook(contactName, assistantPhone, phoneNumberId);
     await postWebhook(quoteTitle, assistantPhone, phoneNumberId);
     await postWebhook('30000', assistantPhone, phoneNumberId);
-    await postWebhook('4', assistantPhone, phoneNumberId);
+    await postWebhook('borrador', assistantPhone, phoneNumberId);
     const quotePendingBeforeConfirm = await prisma.assistantPendingAction.findFirst({
       where: { professionalId: professional.id },
       orderBy: { updatedAt: 'desc' }
     });
-    const quoteConfirmationResult = await postWebhook('1', assistantPhone, phoneNumberId);
+    const quoteConfirmationResult = await postWebhook('confirmar', assistantPhone, phoneNumberId);
 
     const quote = await prisma.quote.findFirst({
       where: { professionalId: professional.id, contactId: contact.id, title: quoteTitle }
@@ -127,12 +134,12 @@ async function main() {
     }
 
     await postWebhook('menu', assistantPhone, phoneNumberId);
-    await postWebhook('3', assistantPhone, phoneNumberId);
+    await postWebhook('agendar', assistantPhone, phoneNumberId);
     await postWebhook(contactName, assistantPhone, phoneNumberId);
     await postWebhook('manana 10:30', assistantPhone, phoneNumberId);
     await postWebhook(appointmentTitle, assistantPhone, phoneNumberId);
     await postWebhook('domicilio', assistantPhone, phoneNumberId);
-    await postWebhook('1', assistantPhone, phoneNumberId);
+    await postWebhook('si', assistantPhone, phoneNumberId);
 
     const appointment = await prisma.appointment.findFirst({
       where: { professionalId: professional.id, contactId: contact.id, title: appointmentTitle }

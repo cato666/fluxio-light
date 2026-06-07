@@ -399,7 +399,8 @@ export class WhatsappRouterService {
     const pending = await this.findPendingAssistantAction(professionalId, fromPhone);
     const command = this.parser.parse(text);
 
-    if (pending && !this.shouldReplacePendingAction(command, text)) {
+    const shouldKeepGuidedFlow = pending?.type?.startsWith('GUIDED_') && !this.isCompleteCommand(command);
+    if (pending && (shouldKeepGuidedFlow || !this.shouldReplacePendingAction(command, text))) {
       return this.handlePendingAssistantAction(pending, professionalId, phoneNumberId, fromPhone, text);
     }
 
@@ -408,7 +409,10 @@ export class WhatsappRouterService {
     }
 
     if (command.type === 'UNKNOWN') {
-      return { professionalId, command: command.type, ignored: true, reason: 'unknown_assistant_text' };
+      await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_MENU', {});
+      const reply = this.responses.recoveryMenu();
+      await this.replyIfPossible(phoneNumberId, fromPhone, reply);
+      return { professionalId, command: command.type, recovered: true, next: 'GUIDED_MENU' };
     }
 
     let reply = this.responses.unknown();
@@ -667,19 +671,19 @@ export class WhatsappRouterService {
     let reply = '';
 
     if (pending.type === 'GUIDED_MENU') {
-      if (answer === '1') {
+      if (this.matchesAnswer(answer, ['1', 'atencion', 'registrar atencion'])) {
         await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_ATTENDANCE', { step: 'CLIENT' });
         reply = this.responses.guidedAskClient('la atencion');
-      } else if (answer === '2') {
+      } else if (this.matchesAnswer(answer, ['2', 'cotizacion', 'crear cotizacion', 'cotizar'])) {
         await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_QUOTE', { step: 'CLIENT' });
         reply = this.responses.guidedAskClient('la cotizacion');
-      } else if (answer === '3') {
+      } else if (this.matchesAnswer(answer, ['3', 'agenda', 'agendar', 'agendar servicio', 'cita'])) {
         await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_APPOINTMENT', { step: 'CLIENT' });
         reply = this.responses.guidedAskClient('el servicio agendado');
-      } else if (answer === '4') {
+      } else if (this.matchesAnswer(answer, ['4', 'gasto', 'registrar gasto'])) {
         await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_EXPENSE', { step: 'DESCRIPTION' });
         reply = 'Que gasto quieres registrar?\n\nEjemplo: insumos de farmacia';
-      } else if (answer === '5') {
+      } else if (this.matchesAnswer(answer, ['5', 'mas', 'mas opciones', 'otras opciones'])) {
         await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_MORE_MENU', {});
         reply = this.responses.moreMenu();
       } else {
@@ -690,20 +694,20 @@ export class WhatsappRouterService {
     }
 
     if (pending.type === 'GUIDED_MORE_MENU') {
-      if (answer === '1') {
+      if (this.matchesAnswer(answer, ['1', 'agenda hoy', 'hoy'])) {
         await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
         reply = await this.buildAgendaReply(professionalId, 'today');
-      } else if (answer === '2') {
+      } else if (this.matchesAnswer(answer, ['2', 'agenda manana', 'manana'])) {
         await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
         reply = await this.buildAgendaReply(professionalId, 'tomorrow');
-      } else if (answer === '3') {
+      } else if (this.matchesAnswer(answer, ['3', 'cobros', 'cobros pendientes', 'pendientes'])) {
         await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
         reply = await this.buildPendingPaymentsReply(professionalId);
-      } else if (answer === '4') {
+      } else if (this.matchesAnswer(answer, ['4', 'resumen', 'resumen del mes'])) {
         await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
         const summary = await this.buildMonthSummary(professionalId);
         reply = `Este mes llevas:\nIngresos: $${summary.income.toLocaleString('es-CL')}\nGastos: $${summary.expenses.toLocaleString('es-CL')}\nUtilidad estimada: $${(summary.income - summary.expenses).toLocaleString('es-CL')}\nAtenciones: ${summary.attendances}`;
-      } else if (answer === '5') {
+      } else if (this.matchesAnswer(answer, ['5', 'volver', 'menu', 'menu principal'])) {
         await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_MENU', {});
         reply = this.responses.menu();
       } else {
@@ -763,8 +767,12 @@ export class WhatsappRouterService {
         reply = this.responses.guidedAskPaymentMethod();
       }
     } else if (payload.step === 'PAYMENT') {
-      const methods: Record<string, string> = { '1': 'transferencia', '2': 'efectivo', '3': 'tarjeta', '4': 'otro' };
-      const paymentMethod = methods[this.normalizeText(answer)];
+      const paymentMethod =
+        this.matchesAnswer(answer, ['1', 'transferencia', 'transfer']) ? 'transferencia'
+        : this.matchesAnswer(answer, ['2', 'efectivo']) ? 'efectivo'
+        : this.matchesAnswer(answer, ['3', 'tarjeta']) ? 'tarjeta'
+        : this.matchesAnswer(answer, ['4', 'otro', 'otros']) ? 'otro'
+        : undefined;
       if (!paymentMethod) reply = this.responses.guidedInvalidOption(4);
       else {
         const next = { ...payload, step: 'CONFIRM', paymentMethod };
@@ -780,7 +788,7 @@ export class WhatsappRouterService {
       if (this.normalizeText(answer) === '2') {
         await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
         reply = this.responses.pendingCancelled();
-      } else if (this.normalizeText(answer) === '1') {
+      } else if (this.isConfirmation(answer)) {
         const command: ParsedCommand = {
           type: 'REGISTER_ATTENDANCE',
           name: payload.client,
@@ -827,16 +835,22 @@ export class WhatsappRouterService {
         reply = this.responses.guidedQuoteDelivery();
       }
     } else if (payload.step === 'DELIVERY') {
+      const deliveryOption =
+        this.matchesAnswer(answer, ['1', 'texto', 'texto al cliente']) ? '1'
+        : this.matchesAnswer(answer, ['2', 'pdf al cliente', 'enviar pdf al cliente']) ? '2'
+        : this.matchesAnswer(answer, ['3', 'pdf para mi', 'pdf a mi whatsapp', 'enviarme el pdf']) ? '3'
+        : this.matchesAnswer(answer, ['4', 'borrador', 'guardar borrador']) ? '4'
+        : undefined;
       const deliveries: Record<string, string> = {
         '1': 'texto al cliente',
         '2': 'PDF al cliente',
         '3': 'PDF a mi WhatsApp',
         '4': 'guardar borrador'
       };
-      const delivery = deliveries[this.normalizeText(answer)];
+      const delivery = deliveryOption ? deliveries[deliveryOption] : undefined;
       if (!delivery) reply = this.responses.guidedInvalidOption(4);
       else {
-        const next = { ...payload, step: 'CONFIRM', deliveryOption: answer, delivery };
+        const next = { ...payload, step: 'CONFIRM', deliveryOption, delivery };
         await this.savePendingAssistantAction(professionalId, fromPhone, 'GUIDED_QUOTE', next);
         reply = this.responses.guidedConfirm('Confirma la cotizacion:', [
           `Cliente: ${next.client}`,
@@ -849,7 +863,7 @@ export class WhatsappRouterService {
       if (this.normalizeText(answer) === '2') {
         await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
         reply = this.responses.pendingCancelled();
-      } else if (this.normalizeText(answer) === '1') {
+      } else if (this.isConfirmation(answer)) {
         const types: Record<string, ParsedCommand['type']> = {
           '1': 'QUOTE_TEXT_DIRECT',
           '2': 'QUOTE_PDF_CLIENT',
@@ -913,7 +927,7 @@ export class WhatsappRouterService {
       if (this.normalizeText(answer) === '2') {
         await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
         reply = this.responses.pendingCancelled();
-      } else if (this.normalizeText(answer) === '1') {
+      } else if (this.isConfirmation(answer)) {
         const command: ParsedCommand = {
           type: 'CREATE_APPOINTMENT',
           name: payload.client,
@@ -961,7 +975,7 @@ export class WhatsappRouterService {
       if (this.normalizeText(answer) === '2') {
         await this.prisma.assistantPendingAction.delete({ where: { id: pending.id } });
         reply = this.responses.pendingCancelled();
-      } else if (this.normalizeText(answer) === '1') {
+      } else if (this.isConfirmation(answer)) {
         await this.prisma.expense.create({
           data: {
             professionalId,
@@ -1342,6 +1356,22 @@ export class WhatsappRouterService {
     return command.type !== 'UNKNOWN';
   }
 
+  private isCompleteCommand(command: ParsedCommand) {
+    if (command.type === 'MENU' || command.type === 'MONTH_SUMMARY' || command.type === 'AGENDA_QUERY') return true;
+    if (command.type === 'REGISTER_ATTENDANCE') return Boolean(command.name && command.title);
+    if (command.type === 'REGISTER_EXPENSE') return Boolean(command.description && command.amount);
+    if (command.type === 'CREATE_APPOINTMENT') return Boolean(command.name && command.startsAtText && command.title);
+    if (command.type === 'QUOTE' || command.type === 'QUOTE_PDF_SELF') {
+      return Boolean(command.name && command.service && command.amount);
+    }
+    if (command.type === 'NEW_LEAD') return Boolean(command.name && command.description);
+    if (command.type === 'UPDATE_CONTACT_PHONE') return Boolean(command.name && command.phone);
+    if (command.type === 'QUOTE_QUERY' || command.type === 'PAYMENT_QUERY') return true;
+    if (command.type === 'CONVERT_QUOTE' || command.type === 'PAYMENT_REMINDER') return Boolean(command.name);
+    if (command.type === 'PAYMENT_RECEIVED') return Boolean(command.name && command.amount);
+    return false;
+  }
+
   private isOutboundWebhookEcho(direction: string | undefined, message: any, data: any) {
     const normalizedDirection = this.normalizeText(direction);
     const status = this.normalizeText(message?.kapso?.status || data?.status || message?.status);
@@ -1418,6 +1448,7 @@ export class WhatsappRouterService {
       'encontre mas de un cliente posible',
       'listo cancele la accion pendiente',
       'no entendi completamente el mensaje',
+      'no pude entender ese mensaje',
       'este mes llevas',
       'hola soy fluxio light',
       'que necesitas hacer',
@@ -2123,6 +2154,15 @@ export class WhatsappRouterService {
     const digits = String(value || '').replace(/[^\d]/g, '');
     const amount = Number(digits);
     return Number.isFinite(amount) && amount > 0 ? amount : null;
+  }
+
+  private matchesAnswer(value: string | undefined, accepted: string[]) {
+    const normalized = this.normalizeText(value);
+    return accepted.some((item) => normalized === this.normalizeText(item));
+  }
+
+  private isConfirmation(value?: string) {
+    return this.matchesAnswer(value, ['1', 'si', 's', 'confirmar', 'confirmo', 'ok']);
   }
 
   private async replyIfPossible(phoneNumberId?: string | null, to?: string, body?: string) {

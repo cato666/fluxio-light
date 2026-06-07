@@ -355,6 +355,8 @@ Cada opcion solicita un dato por mensaje y muestra una confirmacion antes de gua
 
 Los comandos completos anteriores siguen disponibles como atajos.
 
+El menu acepta numeros o palabras equivalentes, por ejemplo `cotizacion`, `agendar`, `gasto`, `transferencia`, `borrador`, `si` y `confirmar`. Si el profesional escribe una opcion invalida, Fluxio explica que espera y conserva los datos ingresados. Si escribe un comando desconocido fuera de un flujo, Fluxio responde con el menu en vez de quedar en silencio.
+
 En onboarding, esto se muestra como `Numero Fluxio` y `WhatsApp de trabajo para comandos`. El profesional no necesita ver `sandbox`, `production` ni `webhook URL`; esos datos quedan para soporte.
 
 Las cotizaciones quedan guardadas como entidad propia. Una atencion puede existir sin cotizacion previa; cuando una cotizacion se acepta, se puede convertir en atencion desde la vista `Cotizaciones`, creando tambien el ingreso asociado.

@@ -29,6 +29,8 @@ La cotizacion permite elegir entre texto al cliente, PDF al cliente, PDF al prof
 
 Los comandos completos descritos abajo continúan disponibles como atajos.
 
+Las respuestas numericas tambien aceptan palabras equivalentes. Una respuesta invalida repite la orientacion del paso actual sin borrar el contexto. Un texto desconocido fuera de un flujo abre el menu de recuperacion y confirma que no se realizo ningun cambio.
+
 ## Registro de atencion por comando
 
 El comando debe enviarse al chat privado con Fluxio/Kapso, no al chat visible del cliente.

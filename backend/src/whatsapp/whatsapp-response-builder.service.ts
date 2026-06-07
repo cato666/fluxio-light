@@ -94,6 +94,15 @@ export class WhatsappResponseBuilderService {
     return `Responde con un numero entre 1 y ${max}, o escribe "cancelar".`;
   }
 
+  recoveryMenu() {
+    return [
+      'No pude entender ese mensaje.',
+      'No se realizo ningun cambio.',
+      '',
+      this.menu()
+    ].join('\n');
+  }
+
   leadCreated(name?: string) {
     return `Lead registrado.${name ? `\nNombre: ${name}` : ''}`;
   }
