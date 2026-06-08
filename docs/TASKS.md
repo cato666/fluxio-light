@@ -58,6 +58,7 @@
 - [x] Vista Configuracion para profesional y plantillas.
 - [x] Vista Primeros pasos para guiar uso del numero Fluxio/Kapso.
 - [x] Menu numerico guiado para atenciones, cotizaciones, agenda y gastos.
+- [x] Canal privado Telegram Admin para altas, cambios de cuenta y fallas WhatsApp, con webhook opcional a n8n.
 
 ## Fase 3 - Kapso
 

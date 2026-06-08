@@ -18,11 +18,13 @@ import { QuotesModule } from './quotes/quotes.module';
 import { AuditModule } from './audit/audit.module';
 import { MessageTemplatesModule } from './message-templates/message-templates.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
+import { AdminNotificationsModule } from './admin-notifications/admin-notifications.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    AdminNotificationsModule,
     AuthModule,
     ProfessionalsModule,
     ContactsModule,

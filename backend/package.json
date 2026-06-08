@@ -14,6 +14,7 @@
     "test:whatsapp:guided-menu": "node scripts/test-whatsapp-guided-menu.js",
     "test:whatsapp:health": "node scripts/test-whatsapp-health.js",
     "test:appointments:enhancements": "node scripts/test-appointment-enhancements.js",
+    "test:admin-notifications": "node scripts/test-admin-notifications.js",
     "test:whatsapp:payments-flow": "node scripts/test-whatsapp-payments-flow.js",
     "admin:approve-user": "node scripts/approve-user.js",
     "admin:suspend-user": "node scripts/suspend-user.js",

@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MessageTemplatesService } from '../message-templates/message-templates.service';
+import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
 import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
@@ -12,7 +13,8 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private templates: MessageTemplatesService,
-    private config: ConfigService
+    private config: ConfigService,
+    private adminNotifications: AdminNotificationsService
   ) {}
 
   async register(dto: RegisterDto) {
@@ -90,6 +92,25 @@ export class AuthService {
     if (user.professional?.id) {
       await this.templates.ensureDefaults(user.professional.id);
     }
+
+    await this.adminNotifications.notify({
+      type: 'PROFESSIONAL_REGISTERED',
+      severity: 'info',
+      title: 'Nuevo profesional registrado',
+      message: 'Una cuenta nueva quedo pendiente de aprobacion manual.',
+      professionalId: user.professional?.id || null,
+      entity: 'User',
+      entityId: user.id,
+      adminPath: '/?page=platform-admin',
+      metadata: {
+        email: user.email,
+        professionalName: user.professional?.displayName || user.name,
+        phone: user.professional?.phone,
+        profession: user.professional?.profession,
+        status: user.accountStatus,
+        invitationAccepted: Boolean(invitation)
+      }
+    });
 
     return {
       ok: true,

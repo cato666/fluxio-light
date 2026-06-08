@@ -122,6 +122,47 @@ Habilita los correos internos con:
 PLATFORM_ADMIN_EMAILS=admin@fluxiolight.local
 ```
 
+### Telegram Admin y n8n
+
+Fluxio puede avisar eventos internos a un canal privado de administracion. La primera salida es directa a Telegram; la segunda es un webhook opcional para n8n.
+
+Variables:
+
+```env
+TELEGRAM_ADMIN_ENABLED=false
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_ADMIN_CHAT_ID=
+TELEGRAM_ALERT_LEVEL=info
+
+ADMIN_EVENTS_WEBHOOK_ENABLED=false
+ADMIN_EVENTS_WEBHOOK_URL=
+ADMIN_EVENTS_WEBHOOK_SECRET=
+ADMIN_EVENTS_MIN_LEVEL=info
+```
+
+Configuracion recomendada:
+
+1. Crear un bot privado con BotFather.
+2. Guardar el token en `TELEGRAM_BOT_TOKEN`.
+3. Enviar un mensaje al bot o agregarlo a un grupo privado.
+4. Obtener el `chat_id` y guardarlo en `TELEGRAM_ADMIN_CHAT_ID`.
+5. Activar `TELEGRAM_ADMIN_ENABLED=true`.
+
+Eventos iniciales:
+
+- nuevo profesional registrado y pendiente de aprobacion;
+- cambio de estado de cuenta desde Admin;
+- mensaje WhatsApp saliente fallido por Kapso.
+
+Todos los eventos se registran en `AuditLog` como `ADMIN_EVENT_RECORDED`, aunque Telegram o n8n esten apagados. Si n8n esta activo, Fluxio hace `POST` a `ADMIN_EVENTS_WEBHOOK_URL` y firma el payload con `X-Fluxio-Signature` usando HMAC-SHA256 cuando `ADMIN_EVENTS_WEBHOOK_SECRET` tiene valor.
+
+Prueba local sin enviar mensajes externos:
+
+```bash
+cd backend
+npm run test:admin-notifications
+```
+
 Las cuentas listadas ahi pueden entrar con su usuario normal y ver una seccion adicional en la barra lateral. El panel permite:
 
 - ver profesionales registrados, pendientes, activos y suspendidos;

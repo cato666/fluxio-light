@@ -1,6 +1,7 @@
 import { BadGatewayException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
 import { KapsoConfigService } from './kapso-config.service';
 import { KapsoPlatformClient } from './kapso-platform.client';
 
@@ -38,7 +39,8 @@ export class KapsoService {
     private config: ConfigService,
     private prisma: PrismaService,
     private kapsoConfig: KapsoConfigService,
-    private platformClient: KapsoPlatformClient
+    private platformClient: KapsoPlatformClient,
+    private adminNotifications: AdminNotificationsService
   ) {
     this.kapsoConfig.validateForStartup();
   }
@@ -308,6 +310,7 @@ export class KapsoService {
           }
         }
       });
+      await this.notifyOutboundFailure(savedMessage.id, input.professionalId, input.source, input.to, message);
       throw error;
     }
   }
@@ -412,12 +415,37 @@ export class KapsoService {
           }
         }
       });
+      await this.notifyOutboundFailure(savedMessage.id, input.professionalId, input.source, input.to, message);
       throw error;
     }
   }
 
   private extractKapsoMessageId(result: any) {
     return result?.messages?.[0]?.id || result?.message?.id || result?.id || result?.data?.id || null;
+  }
+
+  private async notifyOutboundFailure(messageId: string, professionalId: string, source: string, toPhone: string, error: string) {
+    const professional = await this.prisma.professional.findUnique({
+      where: { id: professionalId },
+      include: { user: true }
+    });
+    await this.adminNotifications.notify({
+      type: 'WHATSAPP_OUTBOUND_FAILED',
+      severity: 'warning',
+      title: 'Mensaje WhatsApp fallido',
+      message: 'Fluxio no pudo enviar un mensaje saliente por Kapso.',
+      professionalId,
+      entity: 'WhatsAppMessage',
+      entityId: messageId,
+      adminPath: '/?page=platform-admin',
+      metadata: {
+        professionalName: professional?.displayName,
+        email: professional?.user?.email,
+        phone: toPhone,
+        source,
+        error
+      }
+    });
   }
 
   private async ensureKapsoCustomer(professional: { id: string; displayName: string; kapsoCustomerId?: string | null }) {

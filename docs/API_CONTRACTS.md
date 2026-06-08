@@ -41,6 +41,34 @@ POST /platform-admin/outbound-messages/:id/retry
 
 `POST /platform-admin/outbound-messages/:id/retry` solo admite mensajes `text` o `document` fallidos/atascados. Aplica espera minima de 30 segundos, maximo tres intentos por mensaje original y deja trazabilidad en `AuditLog`.
 
+## Eventos Admin
+
+Los eventos administrativos no exponen una API publica. Se emiten desde backend hacia:
+
+- Telegram privado, si `TELEGRAM_ADMIN_ENABLED=true`;
+- webhook n8n, si `ADMIN_EVENTS_WEBHOOK_ENABLED=true`.
+
+Payload enviado a n8n:
+
+```json
+{
+  "id": "PROFESSIONAL_REGISTERED-...",
+  "createdAt": "2026-06-07T00:00:00.000Z",
+  "source": "fluxio-light",
+  "event": {
+    "type": "PROFESSIONAL_REGISTERED",
+    "severity": "info",
+    "title": "Nuevo profesional registrado",
+    "message": "Una cuenta nueva quedo pendiente de aprobacion manual.",
+    "entity": "User",
+    "entityId": "uuid",
+    "metadata": {}
+  }
+}
+```
+
+Si `ADMIN_EVENTS_WEBHOOK_SECRET` esta configurado, el body se firma con HMAC-SHA256 en el header `X-Fluxio-Signature`.
+
 ## CRUD principales
 
 ```txt

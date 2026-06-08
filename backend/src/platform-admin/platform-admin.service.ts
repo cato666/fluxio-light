@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { KapsoConfigService } from '../kapso/kapso-config.service';
 import { KapsoService } from '../kapso/kapso.service';
+import { AdminNotificationsService } from '../admin-notifications/admin-notifications.service';
 
 type AccountAction = 'ACTIVE' | 'SUSPENDED' | 'PENDING_APPROVAL';
 
@@ -13,7 +14,8 @@ export class PlatformAdminService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly kapsoConfig: KapsoConfigService,
-    private readonly kapsoService: KapsoService
+    private readonly kapsoService: KapsoService,
+    private readonly adminNotifications: AdminNotificationsService
   ) {}
 
   async overview() {
@@ -348,6 +350,24 @@ export class PlatformAdminService {
           previousStatus: existing.accountStatus,
           nextStatus: status
         }
+      }
+    });
+
+    await this.adminNotifications.notify({
+      type: 'PROFESSIONAL_ACCOUNT_STATUS_CHANGED',
+      severity: status === 'ACTIVE' ? 'info' : 'warning',
+      title: status === 'ACTIVE' ? 'Profesional aprobado' : 'Estado de profesional actualizado',
+      message: `La cuenta cambio de ${existing.accountStatus} a ${status}.`,
+      professionalId: existing.professional?.id || null,
+      entity: 'User',
+      entityId: userId,
+      adminPath: '/?page=platform-admin',
+      metadata: {
+        email: existing.email,
+        professionalName: existing.professional?.displayName || existing.name,
+        phone: existing.professional?.phone,
+        previousStatus: existing.accountStatus,
+        status
       }
     });
 
